@@ -3,28 +3,66 @@ import torch.nn as nn
 from torch.nn.modules.activation import ReLU, Sigmoid
 import torch.optim as optim
 from torchvision import datasets, transforms
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
+import json
+import os
+from pathlib import Path
+import argparse
+import copy
 
-num_epochs = 10
+num_epochs = 15
+BASE_VAL_PATH = "data/validation/"
+
+class PatchDataset(Dataset): #a dataset object has to be definied that specifies how PyTorch can access the training data
+
+    def __init__(self, X):
+        'Initialization'
+        self.X = X
+    
+    def __len__(self):
+        'Denotes the total number of samples'
+        return len(self.X)
+
+    def __getitem__(self, index):
+        'Generates one sample of data'
+        # Select sample
+        image = self.X[index]
+        X = self.transform(image)
+        return X
+
+    transform = T.Compose([
+        T.ToPILImage(),
+        #T.Resize(image_size),
+        T.ToTensor()])
 
 class Autoencoder(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+
         self.encoder = nn.Sequential(
-            nn. Conv2d(1, 16, 3, stride=2, padding=1), # N, 16, 14, 14
+            #the stride parameter is describing how much the resoltion decreases in each step
+            nn. Conv2d(3, 16, 3, stride=2, padding=1), # N, 16, 32, 32
             nn. ReLU() ,
-            nn. Conv2d(16, 32, 3 , stride=2, padding=1), # N, 32, 7, 7
+            nn. Conv2d(16, 32, 3 , stride=2, padding=1), # N, 32, 16, 16
             nn. ReLU(),
-            nn. Conv2d(32, 64, 7) # N, 64, 1, 1
+            nn. Conv2d(32, 64, 3 , stride=2, padding=1), # N, 64, 8, 8
+            nn. ReLU(),
+            #in the last step, we make the stride equal to the image resolution, thus reducing it to just one pixel
+            nn. Conv2d(64, 128, 8) # N, 128, 1, 1 -> this results a simple 128d vector
         )
 
         self.decoder = nn.Sequential(
-            nn. ConvTranspose2d(64, 32, 7), # N, 32, 7, 7
+            nn. ConvTranspose2d(128, 64, 8), # N, 64, 8, 8
             nn. ReLU() ,
-            nn. ConvTranspose2d(32, 16, 3, stride=2, padding=1, output_padding=1), # N, 16,14,14
+            nn. ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1), # N, 64, 8, 8
             nn. ReLU() ,
-            nn.ConvTranspose2d(16, 1, 3, stride=2, padding=1, output_padding=1), # N, 1, 28, 28
+            nn. ConvTranspose2d(32, 16, 3, stride=2, padding=1, output_padding=1), # N, 32, 16, 16
+            nn. ReLU() ,
+            nn. ConvTranspose2d(16, 3, 3, stride=2, padding=1, output_padding=1), # N, 3, 64, 64
             nn. Sigmoid()
         )
 
@@ -47,7 +85,8 @@ def trainEncoder(data_loader):
 
     outputs = []
     for epoch in range (num_epochs) :
-        for (img, _) in data_loader:
+        for (img) in data_loader:
+            #print(img.shape)
             #img = img. reshape (-1, 28*28)
             recon = model (img)
             loss = criterion (recon, img)
@@ -63,9 +102,9 @@ def trainEncoder(data_loader):
 
 
 def displayResults(outputs):
-    for k in range (0, num_epochs, 4):
+    for k in range (0, num_epochs, 5):
         plt. figure (figsize=(9, 2))
-        plt. gray ()
+        #plt. gray ()
         imgs = outputs[k][1].detach().numpy()
         recon = outputs[k][2].detach().numpy()
         for i, item in enumerate (imgs):
@@ -80,7 +119,34 @@ def displayResults(outputs):
     plt.show()
 
 
+def sliceImage(imagepath):
+    image = cv2.imread(imagepath)
+    patchSize = (64,64)
+    imgResolution = image.shape[:-1]
+    patchCount = (int(imgResolution[0]/patchSize[0]),int(imgResolution[1]/patchSize[1]))
+    print(patchCount)
+    patches = []
+    for x in range(patchCount[0]):
+        for y in range(patchCount[1]):
+            xCoord = x*patchSize[0]
+            yCoord = y*patchSize[1]
+            patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
+            #patch = patch.astype(np.float32)
+            #patch /= 255. #convert image to float, so that every value is between 0 an 1
+            if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
+                patches.append(patch)
+                # print(patch)
+                # cv2.imshow(imagepath,patch)
+                # cv2.waitKey(100)
+    
+    return patches
+
+
 if __name__ == "__main__":
-    data_loader=loadData()
-    outputs = trainEncoder(data_loader)
+
+
+    print("***OKAAAAY LETS GO***")
+    patches = sliceImage("covi_project_2021/data/train/train-1-0/3-B01.png")
+    dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=True,num_workers=3, pin_memory=True)
+    outputs = trainEncoder(dataloader)
     displayResults(outputs)
