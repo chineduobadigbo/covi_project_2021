@@ -13,8 +13,9 @@ import os
 from pathlib import Path
 import argparse
 import copy
+import time
 
-num_epochs = 15
+num_epochs = 2000
 BASE_VAL_PATH = "data/validation/"
 
 class PatchDataset(Dataset): #a dataset object has to be definied that specifies how PyTorch can access the training data
@@ -79,6 +80,7 @@ def loadData():
     return data_loader
 
 def trainEncoder(data_loader):
+    start = time.time()
     model = Autoencoder()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model. parameters (), lr=1e-3, weight_decay=1e-5)
@@ -97,12 +99,15 @@ def trainEncoder(data_loader):
         print (f' Epoch: {epoch+1}, Loss: {loss. item ():.4f}')
         outputs.append((epoch, img, recon))
 
+    print("training time: ",str(time.time()-start))
+    torch.save(model.state_dict(), "testmodel.txt")
+
     return outputs
 
 
 
 def displayResults(outputs):
-    for k in range (0, num_epochs, 5):
+    for k in range (0, num_epochs, 200):
         plt. figure (figsize=(9, 2))
         #plt. gray ()
         imgs = outputs[k][1].detach().numpy()
@@ -110,11 +115,13 @@ def displayResults(outputs):
         for i, item in enumerate (imgs):
             if i >= 9: break
             plt. subplot (2, 9, i+1)
-            plt.imshow(item[0])
+            item = np.moveaxis(item, 0, 2)
+            plt.imshow(item)
         for i, item in enumerate(recon) :
             if i >= 9: break
             plt. subplot(2, 9, 9+i+1) # row length + i + 1
-            plt.imshow(item[0])
+            item = np.moveaxis(item, 0, 2)
+            plt.imshow(item)
 
     plt.show()
 
@@ -126,6 +133,7 @@ def sliceImage(imagepath):
     patchCount = (int(imgResolution[0]/patchSize[0]),int(imgResolution[1]/patchSize[1]))
     print(patchCount)
     patches = []
+    mapping = [] #stores the positions for each patch on the original image
     for x in range(patchCount[0]):
         for y in range(patchCount[1]):
             xCoord = x*patchSize[0]
@@ -135,18 +143,79 @@ def sliceImage(imagepath):
             #patch /= 255. #convert image to float, so that every value is between 0 an 1
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
                 patches.append(patch)
+                mapping.append((xCoord,yCoord))
                 # print(patch)
                 # cv2.imshow(imagepath,patch)
                 # cv2.waitKey(100)
     
-    return patches
+    return patches,mapping,image.shape
+
+
+def loadModel():
+    model = Autoencoder()
+    model.load_state_dict(torch.load("testmodel.txt"))
+    return model
+
+def compareImages(dataloader,model,mapping,resolution):
+    print("sers")
+    canvas = np.zeros(resolution)
+    rebuilt = np.zeros(resolution)
+    cv2.imshow("original",canvas)
+    cv2.imshow("reconstruction",rebuilt)
+    cv2.waitKey(0)
+    for (img) in dataloader:
+        npimg = img.numpy()
+        recon = model (img)
+        nprecon = recon.detach().numpy()
+
+        mses = []
+        for i in range(len(img)):
+
+            location=mapping[i]
+
+            patch=npimg[i]
+            patch = np.moveaxis(patch, 0, 2)
+            canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]=patch
+
+            reconpatch = nprecon[i]
+            reconpatch = np.moveaxis(reconpatch, 0, 2)
+            #rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
+
+            mse = np.square(np.subtract(patch,reconpatch)).mean()
+            mses.append(mse)
+
+    mean_mse=np.mean(mses)
+    print(mean_mse)
+
+    for i in range(len(img)):
+
+            location=mapping[i]
+
+            reconpatch = nprecon[i]
+            reconpatch = np.moveaxis(reconpatch, 0, 2)
+            mse = np.square(np.subtract(patch,reconpatch)).mean()
+            msediff = np.power(np.subtract(mean_mse,mse),2)*10
+            #print(msediff)
+            reconpatch[:,:,2] +=msediff
+            canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
+            rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
+
+
+            cv2.imshow("original",canvas)
+            cv2.imshow("reconstruction",rebuilt)
+            cv2.waitKey(2)
+    cv2.waitKey(0)
+    
 
 
 if __name__ == "__main__":
 
 
     print("***OKAAAAY LETS GO***")
-    patches = sliceImage("covi_project_2021/data/train/train-1-0/3-B01.png")
-    dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=True,num_workers=3, pin_memory=True)
-    outputs = trainEncoder(dataloader)
-    displayResults(outputs)
+    patches,mapping,resolution = sliceImage("covi_project_2021/data/train/train-1-0/0-B01.png")
+    dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=False,num_workers=0, pin_memory=True)
+    model = loadModel()
+    compareImages(dataloader,model,mapping,resolution)
+
+    #outputs = trainEncoder(dataloader)
+    #displayResults(outputs)
