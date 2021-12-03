@@ -10,10 +10,12 @@ import numpy as np
 import cv2
 import json
 import os
+import sys
 from pathlib import Path
 import argparse
 import copy
 import time
+import pathlib
 
 num_epochs = 2000
 BASE_VAL_PATH = "data/validation/"
@@ -219,3 +221,17 @@ if __name__ == "__main__":
 
     #outputs = trainEncoder(dataloader)
     #displayResults(outputs)
+    # parser = argparse.ArgumentParser(description='Train autoencoder')
+    # parser.add_argument('--epochs', default=15, type=int,
+    #                 help='Number of training epochs')
+    # args = parser.parse_args()
+    # global num_epochs
+    # num_epochs = args.epochs
+    # img_path = "data/train/train-1-0/3-B01.png"
+    # print(pathlib.Path().resolve())
+    # slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
+    # print(slice_img_path)
+    # patches = sliceImage(slice_img_path)
+    # dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=True,num_workers=3, pin_memory=True)
+    # outputs = trainEncoder(dataloader)
+    # displayResults(outputs)
