@@ -20,7 +20,9 @@ import itertools
 
 BASE_TRAIN_PATH = "data/train/"
 SAVE_PATH = "data/train_images_mse/"
-
+if torch.cuda.is_available():
+    print('Current device: {}'.format(torch.cuda.current_device()))
+    print('Device Name: {}'.format(torch.cuda.get_device_name(0)))
 class PatchDataset(Dataset): #a dataset object has to be definied that specifies how PyTorch can access the training data
 
     def __init__(self, X):
@@ -74,13 +76,6 @@ class Autoencoder(nn.Module):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
-
-
-def loadData():
-    transform = transforms.ToTensor()
-    mnist_data = datasets.MNIST(root='./mnistdata',train=True,download=True,transform=transform)
-    data_loader = torch.utils.data.DataLoader(dataset=mnist_data,batch_size=64,shuffle=True)
-    return data_loader
 
 def trainEncoder(data_loader):
     start = time.time()
@@ -229,7 +224,7 @@ def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), len(train_patches), shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=64, shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
@@ -268,7 +263,7 @@ if __name__ == "__main__":
 
     if args.train:
         model, outputs = trainEncoder(train_dataloader)
-        torch.save(model.state_dict(), "testmodel.txt")
+        torch.save(model.state_dict(), "chino_testmodel.txt")
     else:
         model = loadModel(name='testmodel_2000epochs.txt')
     compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list)
