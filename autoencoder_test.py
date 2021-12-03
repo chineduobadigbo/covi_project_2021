@@ -16,9 +16,10 @@ import argparse
 import copy
 import time
 import pathlib
+import itertools
 
-num_epochs = 2000
-BASE_VAL_PATH = "data/validation/"
+BASE_TRAIN_PATH = "data/train/"
+SAVE_PATH = "data/train_images_mse/"
 
 class PatchDataset(Dataset): #a dataset object has to be definied that specifies how PyTorch can access the training data
 
@@ -102,9 +103,7 @@ def trainEncoder(data_loader):
         outputs.append((epoch, img, recon))
 
     print("training time: ",str(time.time()-start))
-    torch.save(model.state_dict(), "testmodel.txt")
-
-    return outputs
+    return model, outputs
 
 
 
@@ -153,85 +152,124 @@ def sliceImage(imagepath):
     return patches,mapping,image.shape
 
 
-def loadModel():
+def loadModel(name='testmodel.txt'):
     model = Autoencoder()
-    model.load_state_dict(torch.load("testmodel.txt"))
+    model.load_state_dict(torch.load(name))
     return model
 
-def compareImages(dataloader,model,mapping,resolution):
-    print("sers")
-    canvas = np.zeros(resolution)
-    rebuilt = np.zeros(resolution)
-    cv2.imshow("original",canvas)
-    cv2.imshow("reconstruction",rebuilt)
-    cv2.waitKey(0)
-    for (img) in dataloader:
-        npimg = img.numpy()
-        recon = model (img)
-        nprecon = recon.detach().numpy()
+def compareImages(patches_list,model,mapping_list,resolution_list):
+    global_mse = []
+    canvas_list = []
+    rebuilt_list = []
+    nprecon_list = []
+    new_patches = []
+    print('Paches len {}'.format(len(patches_list)))
+    print('mappings len {}'.format(len(mapping_list)))
+    print('resolutions len {}'.format(len(resolution_list)))
+    for dataloader, mapping, resolution in zip(patches_list, mapping_list, resolution_list):
+        canvas = np.zeros(resolution)
+        rebuilt = np.zeros(resolution)
+        for (img) in dataloader:
+            npimg = img.numpy()
+            recon = model (img)
+            nprecon = recon.detach().numpy()
 
-        mses = []
-        for i in range(len(img)):
+            mses = []
+            for i in range(len(img)):
 
-            location=mapping[i]
+                location=mapping[i]
 
-            patch=npimg[i]
-            patch = np.moveaxis(patch, 0, 2)
-            canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]=patch
+                patch=npimg[i]
+                patch = np.moveaxis(patch, 0, 2)
+                canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]=patch
 
-            reconpatch = nprecon[i]
-            reconpatch = np.moveaxis(reconpatch, 0, 2)
-            #rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
+                reconpatch = nprecon[i]
+                reconpatch = np.moveaxis(reconpatch, 0, 2)
 
-            mse = np.square(np.subtract(patch,reconpatch)).mean()
-            mses.append(mse)
-
-    mean_mse=np.mean(mses)
+                mse = np.square(np.subtract(patch,reconpatch)).mean()
+                mses.append(mse)
+            canvas_list.append(canvas)
+            rebuilt_list.append(rebuilt)
+            global_mse.append(np.mean(mses))
+            nprecon_list.append(nprecon)
+            new_patches.append(patch)
+    mean_mse=np.mean(global_mse)
+    print(global_mse)
     print(mean_mse)
+    save_image_id = 0
+    for dataloader, mapping, canvas, rebuilt, nprecon, patch in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches):
+        for (img) in dataloader:
+            print('Img len: {}'.format(len(img)))
+            for i in range(len(img)):
 
-    for i in range(len(img)):
+                location=mapping[i]
 
-            location=mapping[i]
-
-            reconpatch = nprecon[i]
-            reconpatch = np.moveaxis(reconpatch, 0, 2)
-            mse = np.square(np.subtract(patch,reconpatch)).mean()
-            msediff = np.power(np.subtract(mean_mse,mse),2)*10
-            #print(msediff)
-            reconpatch[:,:,2] +=msediff
-            canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
-            rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
-
-
+                reconpatch = nprecon[i]
+                reconpatch = np.moveaxis(reconpatch, 0, 2)
+                mse = np.square(np.subtract(patch,reconpatch)).mean()
+                msediff = np.power(np.subtract(mean_mse,mse),2)*10
+                #print(msediff)
+                reconpatch[:,:,2] +=msediff
+                canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
+                rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
             cv2.imshow("original",canvas)
             cv2.imshow("reconstruction",rebuilt)
             cv2.waitKey(2)
-    cv2.waitKey(0)
+            write_dir = SAVE_PATH+'{}'.format(save_image_id)
+            print(write_dir)
+            # create dir if not exists
+            Path(write_dir).mkdir(parents=True, exist_ok=True)
+            coonverted_range_canvas = canvas * 255
+            coonverted_range_rebuilt = rebuilt * 255
+            cv2.imwrite(write_dir+'/'+"original.png", coonverted_range_canvas)
+            cv2.imwrite(write_dir+'/'+"rebuilt.png", coonverted_range_rebuilt)
+            save_image_id += 1
     
+def flatten_list_of_lists(t):
+    return [item for sublist in t for item in sublist]
+
+def data_load_wrapper(train_patches):
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), len(train_patches), shuffle=False,num_workers=0, pin_memory=True)
+
+def get_dataloader_list(patches_list):
+    dataloaders = []
+    for patch in patches_list:
+        dataloaders.append(data_load_wrapper(patch))
+    return dataloaders            
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train autoencoder')
+    parser.add_argument('--epochs', default=15, type=int,
+                    help='Number of training epochs')
+    parser.add_argument('--train', dest='train', default=False, action='store_true',
+                    help='Dont train the model, load it instead')
+    args = parser.parse_args()
+    global num_epochs
+    num_epochs = args.epochs
+    img_path = "data/train/train-1-0/0-B01.png"
+    print(pathlib.Path().resolve())
+    patches_list = []
+    mapping_list = []
+    resolution_list = []
+    for root, dirs, files in os.walk(BASE_TRAIN_PATH, topdown=False):
+        for name in dirs:
+            img_path = BASE_TRAIN_PATH + name +'/0-B01.png'
+            slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
+            patches,mapping,resolution = sliceImage(slice_img_path)
+            patches_list.append(patches)
+            mapping_list.append(mapping)
+            resolution_list.append(resolution)
+    print('Len Patch List: {}'.format(len(patches_list)))
+    train_patches = flatten_list_of_lists(patches_list)
+    print('Len Train Patches: {}'.format(len(train_patches)))
+    imgs_per_patch = len(patches_list[0])
+    train_dataloader = data_load_wrapper(train_patches)
 
+    if args.train:
+        model, outputs = trainEncoder(train_dataloader)
+        torch.save(model.state_dict(), "testmodel.txt")
+    else:
+        model = loadModel(name='testmodel_2000epochs.txt')
+    compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list)
 
-    print("***OKAAAAY LETS GO***")
-    patches,mapping,resolution = sliceImage("covi_project_2021/data/train/train-1-0/0-B01.png")
-    dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=False,num_workers=0, pin_memory=True)
-    model = loadModel()
-    compareImages(dataloader,model,mapping,resolution)
-
-    #outputs = trainEncoder(dataloader)
-    #displayResults(outputs)
-    # parser = argparse.ArgumentParser(description='Train autoencoder')
-    # parser.add_argument('--epochs', default=15, type=int,
-    #                 help='Number of training epochs')
-    # args = parser.parse_args()
-    # global num_epochs
-    # num_epochs = args.epochs
-    # img_path = "data/train/train-1-0/3-B01.png"
-    # print(pathlib.Path().resolve())
-    # slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
-    # print(slice_img_path)
-    # patches = sliceImage(slice_img_path)
-    # dataloader = torch.utils.data.DataLoader(PatchDataset(patches), len(patches), shuffle=True,num_workers=3, pin_memory=True)
-    # outputs = trainEncoder(dataloader)
-    # displayResults(outputs)
