@@ -90,7 +90,7 @@ def trainEncoder(data_loader, val_data_loader=None):
 
     for epoch in range (num_epochs) :
         epoch_train_loss = 0.0
-        epoch_valid_loss = 0.0
+        model.train()
         for (img) in data_loader:
             #print(img.shape)
             #img = img. reshape (-1, 28*28)
@@ -107,15 +107,18 @@ def trainEncoder(data_loader, val_data_loader=None):
             epoch_train_loss += loss.item()
 
         if val_data_loader != None:
-            for val_img in val_data_loader:
-                val_img = val_img.to(device)
-                recon = model (val_img)
-                loss = criterion (recon, val_img)
-                del val_img
-                del recon
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                epoch_valid_loss += loss.item()
+            epoch_valid_loss = 0.0
+            model.eval()
+            with torch.no_grad():
+                for val_img in val_data_loader:
+                    val_img = val_img.to(device)
+                    recon = model (val_img)
+                    loss = criterion (recon, val_img)
+                    del val_img
+                    del recon
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    epoch_valid_loss += loss.item()
         if val_data_loader != None:
             print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}, Validation Loss: {(epoch_valid_loss / len(val_data_loader)):.4f}')
         else:
