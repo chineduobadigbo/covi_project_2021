@@ -155,6 +155,8 @@ def loadModel(name='testmodel.txt'):
     return model
 
 def compareImages(patches_list,model,mapping_list,resolution_list, image_name_list, save_folder):
+    if torch.cuda.is_available():
+        model.cuda()
     global_mse = []
     canvas_list = []
     rebuilt_list = []
@@ -228,7 +230,7 @@ def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=512, shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=1024, shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
@@ -279,9 +281,9 @@ if __name__ == "__main__":
 
     if args.train:
         model = trainEncoder(train_dataloader, val_dataloader)
-        torch.save(model.state_dict(), "chino_testmodel.txt")
+        torch.save(model.state_dict(), "{}epochs_testmodel.txt".format(num_epochs))
     else:
-        model = loadModel(name='testmodel_2000epochs.txt')
+        model = loadModel(name='500epochs_model.txt')
     compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list, image_name_list, SAVE_PATH)
     compareImages(get_dataloader_list(val_patches_list),model,val_mapping_list,val_resolution_list, val_image_name_list, VAL_SAVE_PATH)
 
