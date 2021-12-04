@@ -97,7 +97,7 @@ def trainEncoder(data_loader):
         print (f' Epoch: {epoch+1}, Loss: {loss. item ():.4f}')
         outputs.append((epoch, img, recon))
 
-    print("training time: ",str(time.time()-start))
+    print("training time: {}min".format((time.time()-start)/60))
     return model, outputs
 
 
@@ -152,7 +152,7 @@ def loadModel(name='testmodel.txt'):
     model.load_state_dict(torch.load(name))
     return model
 
-def compareImages(patches_list,model,mapping_list,resolution_list):
+def compareImages(patches_list,model,mapping_list,resolution_list, image_name_list):
     global_mse = []
     canvas_list = []
     rebuilt_list = []
@@ -192,7 +192,7 @@ def compareImages(patches_list,model,mapping_list,resolution_list):
     print(global_mse)
     print(mean_mse)
     save_image_id = 0
-    for dataloader, mapping, canvas, rebuilt, nprecon, patch in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches):
+    for dataloader, mapping, canvas, rebuilt, nprecon, patch, imgae_folder_name in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches, image_name_list):
         for (img) in dataloader:
             print('Img len: {}'.format(len(img)))
             for i in range(len(img)):
@@ -210,21 +210,23 @@ def compareImages(patches_list,model,mapping_list,resolution_list):
             cv2.imshow("original",canvas)
             cv2.imshow("reconstruction",rebuilt)
             cv2.waitKey(2)
-            write_dir = SAVE_PATH+'{}'.format(save_image_id)
+            sub_folder = imgae_folder_name.split('/')[0]
+            img_name = imgae_folder_name.split('/')[-1]
+            write_dir = SAVE_PATH+'{}'.format(sub_folder)
             print(write_dir)
             # create dir if not exists
             Path(write_dir).mkdir(parents=True, exist_ok=True)
             coonverted_range_canvas = canvas * 255
             coonverted_range_rebuilt = rebuilt * 255
-            cv2.imwrite(write_dir+'/'+"original.png", coonverted_range_canvas)
-            cv2.imwrite(write_dir+'/'+"rebuilt.png", coonverted_range_rebuilt)
+            cv2.imwrite(write_dir+'/'+"original_{}".format(img_name), coonverted_range_canvas)
+            cv2.imwrite(write_dir+'/'+"rebuilt_{}".format(img_name), coonverted_range_rebuilt)
             save_image_id += 1
     
 def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=64, shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=256, shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
@@ -247,14 +249,17 @@ if __name__ == "__main__":
     patches_list = []
     mapping_list = []
     resolution_list = []
+    image_name_list = []
     for root, dirs, files in os.walk(BASE_TRAIN_PATH, topdown=False):
         for name in dirs:
-            img_path = BASE_TRAIN_PATH + name +'/0-B01.png'
+            sub_folder_image_name = name +'/0-B04.png'
+            img_path = BASE_TRAIN_PATH + sub_folder_image_name
             slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
             patches,mapping,resolution = sliceImage(slice_img_path)
             patches_list.append(patches)
             mapping_list.append(mapping)
             resolution_list.append(resolution)
+            image_name_list.append(sub_folder_image_name)
     print('Len Patch List: {}'.format(len(patches_list)))
     train_patches = flatten_list_of_lists(patches_list)
     print('Len Train Patches: {}'.format(len(train_patches)))
@@ -266,5 +271,5 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), "chino_testmodel.txt")
     else:
         model = loadModel(name='testmodel_2000epochs.txt')
-    compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list)
+    compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list, image_name_list)
 
