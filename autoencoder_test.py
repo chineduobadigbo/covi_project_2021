@@ -1,3 +1,4 @@
+from PIL.Image import SAVE
 import torch
 import torch.nn as nn
 from torch.nn.modules.activation import ReLU, Sigmoid
@@ -20,9 +21,11 @@ import itertools
 
 BASE_TRAIN_PATH = "data/train/"
 SAVE_PATH = "data/train_images_mse/"
+VAL_SAVE_PATH = "data/val_train_images_mse/"
 if torch.cuda.is_available():
     print('Current device: {}'.format(torch.cuda.current_device()))
     print('Device Name: {}'.format(torch.cuda.get_device_name(0)))
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class PatchDataset(Dataset): #a dataset object has to be definied that specifies how PyTorch can access the training data
 
     def __init__(self, X):
@@ -77,50 +80,49 @@ class Autoencoder(nn.Module):
         decoded = self.decoder(encoded)
         return decoded
 
-def trainEncoder(data_loader):
+def trainEncoder(data_loader, val_data_loader=None):
     start = time.time()
     model = Autoencoder()
+    if torch.cuda.is_available():
+        model.cuda()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model. parameters (), lr=1e-3, weight_decay=1e-5)
 
-    outputs = []
     for epoch in range (num_epochs) :
+        epoch_train_loss = 0.0
+        epoch_valid_loss = 0.0
         for (img) in data_loader:
             #print(img.shape)
             #img = img. reshape (-1, 28*28)
+            img = img.to(device)
             recon = model (img)
             loss = criterion (recon, img)
+            del img
+            del recon
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            epoch_train_loss += loss.item()
 
-        print (f' Epoch: {epoch+1}, Loss: {loss. item ():.4f}')
-        outputs.append((epoch, img, recon))
+        if val_data_loader != None:
+            for val_img in val_data_loader:
+                val_img = val_img.to(device)
+                recon = model (val_img)
+                loss = criterion (recon, val_img)
+                del val_img
+                del recon
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                epoch_valid_loss += loss.item()
+        if val_data_loader != None:
+            print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}, Validation Loss: {(epoch_valid_loss / len(val_data_loader)):.4f}')
+        else:
+            print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}')
 
     print("training time: {}min".format((time.time()-start)/60))
-    return model, outputs
-
-
-
-def displayResults(outputs):
-    for k in range (0, num_epochs, 200):
-        plt. figure (figsize=(9, 2))
-        #plt. gray ()
-        imgs = outputs[k][1].detach().numpy()
-        recon = outputs[k][2].detach().numpy()
-        for i, item in enumerate (imgs):
-            if i >= 9: break
-            plt. subplot (2, 9, i+1)
-            item = np.moveaxis(item, 0, 2)
-            plt.imshow(item)
-        for i, item in enumerate(recon) :
-            if i >= 9: break
-            plt. subplot(2, 9, 9+i+1) # row length + i + 1
-            item = np.moveaxis(item, 0, 2)
-            plt.imshow(item)
-
-    plt.show()
-
+    return model
 
 def sliceImage(imagepath):
     image = cv2.imread(imagepath)
@@ -152,7 +154,7 @@ def loadModel(name='testmodel.txt'):
     model.load_state_dict(torch.load(name))
     return model
 
-def compareImages(patches_list,model,mapping_list,resolution_list, image_name_list):
+def compareImages(patches_list,model,mapping_list,resolution_list, image_name_list, save_folder):
     global_mse = []
     canvas_list = []
     rebuilt_list = []
@@ -166,9 +168,9 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
         rebuilt = np.zeros(resolution)
         for (img) in dataloader:
             npimg = img.numpy()
+            img = img.to(device)
             recon = model (img)
-            nprecon = recon.detach().numpy()
-
+            nprecon = recon.detach().cpu().numpy()
             mses = []
             for i in range(len(img)):
 
@@ -212,7 +214,7 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
             cv2.waitKey(2)
             sub_folder = imgae_folder_name.split('/')[0]
             img_name = imgae_folder_name.split('/')[-1]
-            write_dir = SAVE_PATH+'{}'.format(sub_folder)
+            write_dir = save_folder+'{}'.format(sub_folder)
             print(write_dir)
             # create dir if not exists
             Path(write_dir).mkdir(parents=True, exist_ok=True)
@@ -226,13 +228,33 @@ def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=256, shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=512, shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
     for patch in patches_list:
         dataloaders.append(data_load_wrapper(patch))
     return dataloaders            
+
+def load_train_data(file_name='/0-B01.png', size=None):
+    patches_list = []
+    mapping_list = []
+    resolution_list = []
+    image_name_list = []
+    for root, dirs, files in os.walk(BASE_TRAIN_PATH, topdown=False):
+        for name in dirs:
+            sub_folder_image_name = name +file_name
+            img_path = BASE_TRAIN_PATH + sub_folder_image_name
+            slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
+            patches,mapping,resolution = sliceImage(slice_img_path)
+            patches_list.append(patches)
+            mapping_list.append(mapping)
+            resolution_list.append(resolution)
+            image_name_list.append(sub_folder_image_name)
+    if type(size) == int:
+        return patches_list[0:size], mapping_list[0:size], resolution_list[0:size], image_name_list[0:size]
+    else:
+        return patches_list, mapping_list, resolution_list, image_name_list
 
 
 if __name__ == "__main__":
@@ -244,32 +266,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     global num_epochs
     num_epochs = args.epochs
-    img_path = "data/train/train-1-0/0-B01.png"
     print(pathlib.Path().resolve())
-    patches_list = []
-    mapping_list = []
-    resolution_list = []
-    image_name_list = []
-    for root, dirs, files in os.walk(BASE_TRAIN_PATH, topdown=False):
-        for name in dirs:
-            sub_folder_image_name = name +'/0-B04.png'
-            img_path = BASE_TRAIN_PATH + sub_folder_image_name
-            slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
-            patches,mapping,resolution = sliceImage(slice_img_path)
-            patches_list.append(patches)
-            mapping_list.append(mapping)
-            resolution_list.append(resolution)
-            image_name_list.append(sub_folder_image_name)
+    patches_list, mapping_list, resolution_list, image_name_list = load_train_data(file_name='/0-B01.png')
+    val_patches_list, val_mapping_list, val_resolution_list, val_image_name_list = load_train_data(file_name='/0-B04.png', size=5)
     print('Len Patch List: {}'.format(len(patches_list)))
     train_patches = flatten_list_of_lists(patches_list)
     print('Len Train Patches: {}'.format(len(train_patches)))
-    imgs_per_patch = len(patches_list[0])
+    val_patches = flatten_list_of_lists(val_patches_list)
+    print('Len Train Patches: {}'.format(len(val_patches)))
     train_dataloader = data_load_wrapper(train_patches)
+    val_dataloader = data_load_wrapper(val_patches)
 
     if args.train:
-        model, outputs = trainEncoder(train_dataloader)
+        model = trainEncoder(train_dataloader, val_dataloader)
         torch.save(model.state_dict(), "chino_testmodel.txt")
     else:
         model = loadModel(name='testmodel_2000epochs.txt')
-    compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list, image_name_list)
+    compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list, image_name_list, SAVE_PATH)
+    compareImages(get_dataloader_list(val_patches_list),model,val_mapping_list,val_resolution_list, val_image_name_list, VAL_SAVE_PATH)
 
