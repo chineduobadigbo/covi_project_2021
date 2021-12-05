@@ -154,7 +154,7 @@ def sliceImage(imagepath):
 
 def loadModel(name='testmodel.txt'):
     model = Autoencoder()
-    model.load_state_dict(torch.load(name))
+    model.load_state_dict(torch.load(name, map_location=device))
     return model
 
 def compareImages(patches_list,model,mapping_list,resolution_list, image_name_list, save_folder):
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     train_patches = flatten_list_of_lists(patches_list)
     print('Len Train Patches: {}'.format(len(train_patches)))
     val_patches = flatten_list_of_lists(val_patches_list)
-    print('Len Train Patches: {}'.format(len(val_patches)))
+    print('Len Validation Patches: {}'.format(len(val_patches)))
     train_dataloader = data_load_wrapper(train_patches)
     val_dataloader = data_load_wrapper(val_patches)
 
