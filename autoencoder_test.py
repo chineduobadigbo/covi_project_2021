@@ -166,12 +166,12 @@ def convert_hsv(img):
         print(resh_img.shape)
         new_list = np.zeros(resh_img.shape)
         for i in range(resh_img.shape[0]):
-            new_list[i] = cv2.cvtColor(np.float32(resh_img[i])*255, cv2.COLOR_RGB2HSV)
+            new_list[i] = cv2.cvtColor(np.float32(resh_img[i]), cv2.COLOR_RGB2HSV)
         return new_list
     try:
-        return cv2.cvtColor(np.float32(img)*255, cv2.COLOR_RGB2HSV)
+        return cv2.cvtColor(np.float32(img), cv2.COLOR_RGB2HSV)
     except:
-        return cv2.cvtColor(np.float32(np.moveaxis(img, 0, 2))*255, cv2.COLOR_RGB2HSV)
+        return cv2.cvtColor(np.float32(np.moveaxis(img, 0, 2)), cv2.COLOR_RGB2HSV)
 
 # img can be list
 def reshape_imgs(img):
@@ -220,7 +220,6 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
                 #reconpatch = np.moveaxis(reconpatch, 0, 2)
 
                 mse = normalize_data(np.square(np.subtract(convert_hsv(patch)[:,:,hsv_compare_index], convert_hsv(reconpatch)[:,:,hsv_compare_index]))).mean()
-                print('mse: {}'.format(mse))
                 mses.append(mse)
             canvas_list.append(canvas)
             rebuilt_list.append(rebuilt)
@@ -241,14 +240,13 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
 
                 reconpatch = nprecon[i]
                 mse = normalize_data(np.square(np.subtract(convert_hsv(patch)[:,:,hsv_compare_index], convert_hsv(reconpatch.copy())[:,:,hsv_compare_index]))).mean()
-                if mse > mean_mse:
-                    msediff = np.power(np.subtract(mean_mse,mse),2)*10
-                    #print('MSE Diff: {}'.format(msediff))
-                    #print(msediff)
-                    orig_patch = canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]
-                    diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(np.float64(orig_patch), np.float64(reconpatch))
-                    reconpatch[:,:,2] +=msediff
-                    canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
+                msediff = np.power(np.subtract(mean_mse,mse),2)*10
+                #print('MSE Diff: {}'.format(msediff))
+                #print(msediff)
+                orig_patch = canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]
+                diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(np.float64(convert_hsv(orig_patch)), np.float64(convert_hsv((reconpatch))))
+                reconpatch[:,:,2] +=msediff
+                canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
                 rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
 
             cv2.imshow("original",canvas)
