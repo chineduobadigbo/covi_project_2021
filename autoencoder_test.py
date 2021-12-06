@@ -16,6 +16,7 @@ from pathlib import Path
 import argparse
 import copy
 import time
+import datetime
 import pathlib
 import itertools
 
@@ -87,7 +88,7 @@ def trainEncoder(data_loader, val_data_loader=None):
         model.cuda()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model. parameters (), lr=1e-3, weight_decay=1e-5)
-
+    loss_per_epoch = {}
     for epoch in range (num_epochs) :
         epoch_train_loss = 0.0
         model.train()
@@ -121,11 +122,12 @@ def trainEncoder(data_loader, val_data_loader=None):
                     epoch_valid_loss += loss.item()
         if val_data_loader != None:
             print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}, Validation Loss: {(epoch_valid_loss / len(val_data_loader)):.4f}')
+            loss_per_epoch[epoch] = {'train_loss': epoch_train_loss, 'valid_loss': epoch_valid_loss}
         else:
             print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}')
 
     print("training time: {}min".format((time.time()-start)/60))
-    return model
+    return model, loss_per_epoch
 
 def sliceImage(imagepath):
     image = cv2.imread(imagepath)
@@ -273,7 +275,7 @@ if __name__ == "__main__":
     num_epochs = args.epochs
     print(pathlib.Path().resolve())
     patches_list, mapping_list, resolution_list, image_name_list = load_train_data(file_name='/0-B01.png')
-    val_patches_list, val_mapping_list, val_resolution_list, val_image_name_list = load_train_data(file_name='/0-B04.png', size=5)
+    val_patches_list, val_mapping_list, val_resolution_list, val_image_name_list = load_train_data(file_name='/4-B02.png', size=5)
     print('Len Patch List: {}'.format(len(patches_list)))
     train_patches = flatten_list_of_lists(patches_list)
     print('Len Train Patches: {}'.format(len(train_patches)))
@@ -283,7 +285,9 @@ if __name__ == "__main__":
     val_dataloader = data_load_wrapper(val_patches)
 
     if args.train:
-        model = trainEncoder(train_dataloader, val_dataloader)
+        model, loss_metrics = trainEncoder(train_dataloader, val_dataloader)
+        with open('{}epochs_metrics_{}.json'.format(num_epochs, datetime.datetime.now().strftime("%m_%d_%Y_%H%M%S")), 'w') as fp:
+            json.dump(loss_metrics, fp)
         torch.save(model.state_dict(), "{}epochs_testmodel.txt".format(num_epochs))
     else:
         model = loadModel(name='500epochs_model.txt')
