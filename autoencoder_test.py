@@ -20,6 +20,7 @@ import datetime
 import pathlib
 import itertools
 import matplotlib
+import copy
 
 BASE_TRAIN_PATH = "data/train/"
 SAVE_PATH = "data/train_images_mse/"
@@ -173,6 +174,9 @@ def convert_hsv(img):
     except:
         return cv2.cvtColor(np.float32(np.moveaxis(img, 0, 2)), cv2.COLOR_RGB2HSV)
 
+def convert_rbg(img):
+    return cv2.cvtColor(np.float32(img), cv2.COLOR_HSV2RGB)
+
 # img can be list
 def reshape_imgs(img):
     if img.shape[-1] != 3:
@@ -205,7 +209,8 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
         for (img) in dataloader:
             npimg = reshape_imgs(img.numpy())
             img = img.to(device)
-            recon = model (img)
+            with torch.no_grad():
+                recon = model (img)
             nprecon = reshape_imgs(recon.detach().cpu().numpy())
             mses = []
             for i in range(len(img)):
@@ -233,20 +238,22 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
     save_image_id = 0
     for dataloader, mapping, canvas, rebuilt, nprecon, patch, diffed,  image_folder_name in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches, diffed_list, image_name_list):
         for (img) in dataloader:
+            rebuilt_no_vis = copy.deepcopy(rebuilt)
             print('Img len: {}'.format(len(img)))
             for i in range(len(img)):
 
                 location=mapping[i]
 
                 reconpatch = nprecon[i]
+                rebuilt_no_vis[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = reconpatch
                 mse = normalize_data(np.square(np.subtract(convert_hsv(patch)[:,:,hsv_compare_index], convert_hsv(reconpatch.copy())[:,:,hsv_compare_index]))).mean()
                 msediff = np.power(np.subtract(mean_mse,mse),2)*10
                 #print('MSE Diff: {}'.format(msediff))
                 #print(msediff)
                 orig_patch = canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]
-                diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(np.float64(convert_hsv(orig_patch)), np.float64(convert_hsv((reconpatch))))
+                diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(np.float64(orig_patch), np.float64(reconpatch))
                 reconpatch[:,:,2] +=msediff
-                canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
+                #canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
                 rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
 
             cv2.imshow("original",canvas)
@@ -258,12 +265,19 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
             print(write_dir)
             # create dir if not exists
             Path(write_dir).mkdir(parents=True, exist_ok=True)
-            coonverted_range_canvas = canvas * 255
-            coonverted_range_rebuilt = rebuilt * 255
-            coonverted_range_diffed = diffed * 255
-            cv2.imwrite(write_dir+'/'+"original_{}".format(img_name), coonverted_range_canvas)
-            cv2.imwrite(write_dir+'/'+"rebuilt_{}".format(img_name), coonverted_range_rebuilt)
-            cv2.imwrite(write_dir+'/'+"diffed_{}".format(img_name), coonverted_range_diffed)
+            conv_range_canvas = canvas * 255
+            conv_range_rebuilt = rebuilt * 255
+            conv_range_diffed = diffed * 255
+            converted_range_rebuilt_no_vis = rebuilt_no_vis * 255
+            cv2.imwrite(write_dir+'/'+"original_{}".format(img_name), conv_range_canvas)
+            cv2.imwrite(write_dir+'/'+"orig_hue_{}".format(img_name), convert_hsv(conv_range_canvas)[:,:,0])
+            cv2.imwrite(write_dir+'/'+"orig_saturation_{}".format(img_name), convert_hsv(conv_range_canvas)[:,:,1])
+            cv2.imwrite(write_dir+'/'+"orig_value_{}".format(img_name), convert_hsv(conv_range_canvas)[:,:,2])
+            cv2.imwrite(write_dir+'/'+"rebuilt_hue_{}".format(img_name), convert_hsv(converted_range_rebuilt_no_vis)[:,:,0])
+            cv2.imwrite(write_dir+'/'+"rebuilt_saturation_{}".format(img_name), convert_hsv(converted_range_rebuilt_no_vis)[:,:,1])
+            cv2.imwrite(write_dir+'/'+"rebuilt_value_{}".format(img_name), convert_hsv(converted_range_rebuilt_no_vis)[:,:,2])
+            cv2.imwrite(write_dir+'/'+"rebuilt_{}".format(img_name), conv_range_rebuilt)
+            cv2.imwrite(write_dir+'/'+"diffed_{}".format(img_name), conv_range_diffed)
             save_image_id += 1
     
 def flatten_list_of_lists(t):
