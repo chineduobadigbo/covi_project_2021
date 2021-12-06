@@ -19,6 +19,7 @@ import time
 import datetime
 import pathlib
 import itertools
+import matplotlib
 
 BASE_TRAIN_PATH = "data/train/"
 SAVE_PATH = "data/train_images_mse/"
@@ -122,12 +123,29 @@ def trainEncoder(data_loader, val_data_loader=None):
                     epoch_valid_loss += loss.item()
         if val_data_loader != None:
             print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}, Validation Loss: {(epoch_valid_loss / len(val_data_loader)):.4f}')
-            loss_per_epoch[epoch] = {'train_loss': epoch_train_loss, 'valid_loss': epoch_valid_loss}
+            loss_per_epoch[epoch] = {'train_loss': epoch_train_loss / len(data_loader), 'valid_loss': epoch_valid_loss / len(val_data_loader)}
         else:
             print (f' Epoch: {epoch+1}, Train Loss: {(epoch_train_loss / len(data_loader)):.4f}')
 
     print("training time: {}min".format((time.time()-start)/60))
     return model, loss_per_epoch
+
+def convert_hsv(img):
+    print(type(img))
+    print(img.shape)
+    np.array
+    if len(img.shape) > 3:
+        resh_img = np.moveaxis(img, 1, -1)
+        print(resh_img.shape)
+        new_list = np.zeros(resh_img.shape)
+        for i in range(resh_img.shape[0]):
+            new_list[i] = cv2.cvtColor(np.float32(resh_img[i]), cv2.COLOR_RGB2HSV)
+        return new_list
+        cv2.cvtColor(np.float32(np.moveaxis(img[0], 0, 2)), cv2.COLOR_RGB2HSV)
+    try:
+        return cv2.cvtColor(np.float32(img), cv2.COLOR_RGB2HSV)
+    except:
+        return cv2.cvtColor(np.float32(np.moveaxis(img, 0, 2)), cv2.COLOR_RGB2HSV)
 
 def sliceImage(imagepath):
     image = cv2.imread(imagepath)
@@ -165,6 +183,7 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
     global_mse = []
     canvas_list = []
     rebuilt_list = []
+    diffed_list = []
     nprecon_list = []
     new_patches = []
     print('Paches len {}'.format(len(patches_list)))
@@ -173,22 +192,23 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
     for dataloader, mapping, resolution in zip(patches_list, mapping_list, resolution_list):
         canvas = np.zeros(resolution)
         rebuilt = np.zeros(resolution)
+        diffed = np.zeros(resolution)
         for (img) in dataloader:
-            npimg = img.numpy()
+            npimg = convert_hsv(img.numpy())
             img = img.to(device)
             recon = model (img)
-            nprecon = recon.detach().cpu().numpy()
+            nprecon = convert_hsv(recon.detach().cpu().numpy())
             mses = []
             for i in range(len(img)):
 
                 location=mapping[i]
 
                 patch=npimg[i]
-                patch = np.moveaxis(patch, 0, 2)
+                #patch = np.moveaxis(patch, 0, 2)
                 canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]=patch
 
                 reconpatch = nprecon[i]
-                reconpatch = np.moveaxis(reconpatch, 0, 2)
+                #reconpatch = np.moveaxis(reconpatch, 0, 2)
 
                 mse = np.square(np.subtract(patch,reconpatch)).mean()
                 mses.append(mse)
@@ -197,11 +217,12 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
             global_mse.append(np.mean(mses))
             nprecon_list.append(nprecon)
             new_patches.append(patch)
+            diffed_list.append(diffed)
     mean_mse=np.mean(global_mse)
     print(global_mse)
     print(mean_mse)
     save_image_id = 0
-    for dataloader, mapping, canvas, rebuilt, nprecon, patch, imgae_folder_name in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches, image_name_list):
+    for dataloader, mapping, canvas, rebuilt, nprecon, patch, diffed,  image_folder_name in zip(patches_list, mapping_list, canvas_list, rebuilt_list, nprecon_list, new_patches, diffed_list, image_name_list):
         for (img) in dataloader:
             print('Img len: {}'.format(len(img)))
             for i in range(len(img)):
@@ -209,26 +230,34 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
                 location=mapping[i]
 
                 reconpatch = nprecon[i]
-                reconpatch = np.moveaxis(reconpatch, 0, 2)
+                #reconpatch = np.moveaxis(reconpatch, 0, 2)
                 mse = np.square(np.subtract(patch,reconpatch)).mean()
                 msediff = np.power(np.subtract(mean_mse,mse),2)*10
                 #print(msediff)
+                orig_patch = canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]
+                #orig_patch = orig_patch.astype('float32')
+                # print('{} | {}'.format(orig_patch.dtype, reconpatch.dtype))
+                # print('{} | {}'.format(orig_patch.shape, reconpatch.shape))
+                diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(orig_patch, reconpatch)
                 reconpatch[:,:,2] +=msediff
                 canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
                 rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
+
             cv2.imshow("original",canvas)
             cv2.imshow("reconstruction",rebuilt)
             cv2.waitKey(2)
-            sub_folder = imgae_folder_name.split('/')[0]
-            img_name = imgae_folder_name.split('/')[-1]
+            sub_folder = image_folder_name.split('/')[0]
+            img_name = image_folder_name.split('/')[-1]
             write_dir = save_folder+'{}'.format(sub_folder)
             print(write_dir)
             # create dir if not exists
             Path(write_dir).mkdir(parents=True, exist_ok=True)
             coonverted_range_canvas = canvas * 255
             coonverted_range_rebuilt = rebuilt * 255
+            coonverted_range_diffed = diffed * 255
             cv2.imwrite(write_dir+'/'+"original_{}".format(img_name), coonverted_range_canvas)
             cv2.imwrite(write_dir+'/'+"rebuilt_{}".format(img_name), coonverted_range_rebuilt)
+            cv2.imwrite(write_dir+'/'+"diffed_{}".format(img_name), coonverted_range_diffed)
             save_image_id += 1
     
 def flatten_list_of_lists(t):
