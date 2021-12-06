@@ -184,6 +184,8 @@ def reshape_imgs(img):
             resh_img = np.moveaxis(img, 1, -1)
         else:
             resh_img = np.moveaxis(img, 0, -1)
+    else:
+        resh_img = img
     return resh_img
 
 def normalize_data(data):
