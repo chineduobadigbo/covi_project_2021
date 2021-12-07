@@ -144,6 +144,7 @@ def sliceImage(imagepath):
             xCoord = x*patchSize[0]
             yCoord = y*patchSize[1]
             patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
+            patch = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
             #patch = patch.astype(np.float32)
             #patch /= 255. #convert image to float, so that every value is between 0 an 1
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
@@ -162,6 +163,8 @@ def loadModel(name='testmodel.txt'):
     return model
 
 def convert_hsv(img):
+
+    return img
     if len(img.shape) > 3:
         resh_img = np.moveaxis(img, 1, -1)
         print(resh_img.shape)
