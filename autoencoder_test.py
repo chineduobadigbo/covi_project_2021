@@ -289,7 +289,7 @@ def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=1024, shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=len(train_patches), shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
