@@ -6,6 +6,7 @@ import argparse
 import time
 import datetime
 import matplotlib.pyplot as plt
+import colorsys
 
 #our own modules
 import utils.utils as utils
@@ -17,7 +18,7 @@ def loadModel(modelpath):
     print("Loading model...")
     model = utils.loadModel(modelpath)
     model.to(device)
-    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages()
+    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(file_name='/0-B02.png', size=5)
     dataloader = utils.dataLoadWrapper(utils.flattenListOfLists(patchesList))
     print("Number of patch batches: ", len(dataloader))
 
@@ -32,7 +33,9 @@ def loadModel(modelpath):
         originalPatch = utils.convertTensorToImage(patchTensor)
         reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor)
         diffPatch = np.subtract(originalPatch,reconstructedPatch)
-        msePatch = np.ones(diffPatch.shape)*np.mean(np.square(diffPatch))
+        diffPatchHSV = cv2.cvtColor(diffPatch, cv2.COLOR_RGB2HSV)
+        mse = np.mean(np.square(diffPatchHSV[:,:,0]))*2
+        msePatch = np.ones(diffPatch.shape)*(mse,mse,100)
         return [originalPatch, reconstructedPatch, diffPatch,msePatch]
 
     # receives a list of puzzled together images and the name of the current original image

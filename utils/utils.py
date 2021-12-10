@@ -39,7 +39,7 @@ def loadImages(file_name='/0-B01.png', size=None): #so far, this only loads the 
             image_name_list.append(sub_folder_image_name)
             tileCount_list.append(tileCount)
     if type(size) == int:
-        return patches_list[0:size], mapping_list[0:size], resolution_list[0:size], image_name_list[0:size]
+        return patches_list[0:size], mapping_list[0:size], resolution_list[0:size], image_name_list[0:size], tileCount_list[0:size]
     else:
         return patches_list, mapping_list, resolution_list, image_name_list, tileCount_list
 
