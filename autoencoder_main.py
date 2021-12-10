@@ -85,7 +85,7 @@ def trainModel(modelpath, epochs):
 
 
 if __name__ == "__main__":
-    os.system('clear')
+    os.system('cls' if os.name == 'nt' else 'clear')
     parser = argparse.ArgumentParser(description='Train autoencoder')
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
     parser.add_argument('--model', default="models/testmodel.txt", type=str, help='Path to the model file')

@@ -96,8 +96,8 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
         item = item.to(device)
         reconstructedTensor = atEachBatch(item)
         for i in range(len(item)):
-            patchTensor = item[i]
-            reconstructedPatchTensor = reconstructedTensor[i]
+            patchTensor = item[i].cpu()
+            reconstructedPatchTensor = reconstructedTensor[i].cpu()
             patchArray = atEachPatch(patchTensor,reconstructedPatchTensor)
             location = mappingsList[currentImageIndex][currentTileIndex]
 
