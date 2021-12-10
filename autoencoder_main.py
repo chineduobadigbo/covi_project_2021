@@ -62,7 +62,7 @@ def trainModel(modelpath, epochs):
     for e in range(epochs):
         epochTrainLoss = 0.0
         for (item) in dataloader:
-            item.to(device)
+            item = item.to(device)
             recon = model(item)
             loss = criterion(recon, item)
             del item

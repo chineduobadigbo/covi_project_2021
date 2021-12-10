@@ -93,7 +93,7 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
         canvasArray[c] = canvasArray[c].astype(np.uint8)
     
     for item in dataloader:
-        item.to(device)
+        item = item.to(device)
         reconstructedTensor = atEachBatch(item)
         for i in range(len(item)):
             patchTensor = item[i]
