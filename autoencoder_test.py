@@ -49,7 +49,8 @@ class PatchDataset(Dataset): #a dataset object has to be definied that specifies
     transform = T.Compose([
         T.ToPILImage(),
         #T.Resize(image_size),
-        T.ToTensor()])
+        T.ToTensor(),
+        ])
 
 class Autoencoder(nn.Module):
     def __init__(self) -> None:
@@ -145,16 +146,25 @@ def sliceImage(imagepath):
             yCoord = y*patchSize[1]
             patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
             patch = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
+            #print(patch)
             #patch = patch.astype(np.float32)
             #patch /= 255. #convert image to float, so that every value is between 0 an 1
+
+            #patch *= 255
+            #patch = patch.astype(np.uint8)
+
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
                 patches.append(patch)
                 mapping.append((xCoord,yCoord))
+                #cv2.imshow("fuck",cv2.cvtColor(patch, cv2.COLOR_HSV2RGB))
+                #print(cv2.cvtColor(patch, cv2.COLOR_HSV2RGB).shape)
+                #cv2.waitKey(0)
                 # print(patch)
                 # cv2.imshow(imagepath,patch)
                 # cv2.waitKey(100)
     
     return patches,mapping,image.shape
+
 
 
 def loadModel(name='testmodel.txt'):
@@ -212,8 +222,11 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
         rebuilt = np.zeros(resolution)
         diffed = np.zeros(resolution)
         for (img) in dataloader:
+            #print(img)
             npimg = reshape_imgs(img.numpy())
             img = img.to(device)
+
+
             with torch.no_grad():
                 recon = model (img)
             nprecon = reshape_imgs(recon.detach().cpu().numpy())
@@ -223,7 +236,30 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
                 location=mapping[i]
 
                 patch=npimg[i]
-                #patch = np.moveaxis(patch, 0, 2)
+                #patch =convert_rbg(patch)
+                #print(patch.shape)
+                #patch = np.moveaxis(patch, 0, 1)
+                #patch = np.moveaxis(patch, 0,)
+
+                
+                #print("combined",recombined.shape)
+
+
+                patch *= 255
+                patch = patch.astype(np.uint8)
+                
+                print(patch)
+                #patch *= 100
+                #patch = patch.astype(np.uint8)
+                patch = cv2.cvtColor(patch, cv2.COLOR_HSV2RGB)
+
+                #r = patch[:,:,0] #green channel
+                #g = patch[:,:,1]
+                #b= patch[:,:,2]
+
+                #recombined = cv2.merge((b,r,g)) #rgb
+                #cv2.imshow("fuck",recombined)
+                #cv2.waitKey(0)
                 canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]=patch
 
                 reconpatch = nprecon[i]
@@ -257,13 +293,13 @@ def compareImages(patches_list,model,mapping_list,resolution_list, image_name_li
                 #print(msediff)
                 orig_patch = canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],:]
                 diffed[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:] = cv2.subtract(np.float64(orig_patch), np.float64(reconpatch))
-                reconpatch[:,:,2] +=msediff
+                #reconpatch[:,:,2] +=msediff
                 #canvas[location[0]:location[0]+patch.shape[0],location[1]:location[1]+patch.shape[1],0]+=msediff
                 rebuilt[location[0]:location[0]+reconpatch.shape[0],location[1]:location[1]+reconpatch.shape[1],:]=reconpatch
 
             cv2.imshow("original",canvas)
-            cv2.imshow("reconstruction",rebuilt)
-            cv2.waitKey(2)
+            #cv2.imshow("reconstruction",rebuilt)
+            cv2.waitKey(0)
             sub_folder = image_folder_name.split('/')[0]
             img_name = image_folder_name.split('/')[-1]
             write_dir = save_folder+'{}'.format(sub_folder)
@@ -289,11 +325,12 @@ def flatten_list_of_lists(t):
     return [item for sublist in t for item in sublist]
 
 def data_load_wrapper(train_patches):
-    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=len(train_patches), shuffle=False,num_workers=0, pin_memory=True)
+    return torch.utils.data.DataLoader(PatchDataset(train_patches), batch_size=1024, shuffle=False,num_workers=0, pin_memory=True)
 
 def get_dataloader_list(patches_list):
     dataloaders = []
     for patch in patches_list:
+        #print(patch)
         dataloaders.append(data_load_wrapper(patch))
     return dataloaders            
 
@@ -330,6 +367,7 @@ if __name__ == "__main__":
     print(pathlib.Path().resolve())
     patches_list, mapping_list, resolution_list, image_name_list = load_train_data(file_name='/0-B01.png')
     val_patches_list, val_mapping_list, val_resolution_list, val_image_name_list = load_train_data(file_name='/4-B02.png', size=5)
+    
     print('Len Patch List: {}'.format(len(patches_list)))
     train_patches = flatten_list_of_lists(patches_list)
     print('Len Train Patches: {}'.format(len(train_patches)))
@@ -337,14 +375,14 @@ if __name__ == "__main__":
     print('Len Validation Patches: {}'.format(len(val_patches)))
     train_dataloader = data_load_wrapper(train_patches)
     val_dataloader = data_load_wrapper(val_patches)
-
+    #print(val_patches)
     if args.train:
         model, loss_metrics = trainEncoder(train_dataloader, val_dataloader)
         with open('{}epochs_metrics_{}.json'.format(num_epochs, datetime.datetime.now().strftime("%m_%d_%Y_%H%M%S")), 'w') as fp:
             json.dump(loss_metrics, fp)
         torch.save(model.state_dict(), "{}epochs_testmodel.txt".format(num_epochs))
     else:
-        model = loadModel(name='500epochs_model.txt')
+        model = loadModel(name='1000epochs_testmodel.txt')
     compareImages(get_dataloader_list(patches_list),model,mapping_list,resolution_list, image_name_list, SAVE_PATH)
     compareImages(get_dataloader_list(val_patches_list),model,val_mapping_list,val_resolution_list, val_image_name_list, VAL_SAVE_PATH)
 
