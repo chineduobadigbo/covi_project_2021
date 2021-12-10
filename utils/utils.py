@@ -107,12 +107,12 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
             currentTileIndex+=1
             if currentTileIndex >= tileCountsList[currentImageIndex]:
                 atEachImage(canvasArray,imageNamesList[currentImageIndex])
-                currentImageIndex+=1
-                currentTileIndex=0
-
                 for c in range(canvasCount):
                     canvasArray[c] = np.zeros(resolutionsList[currentImageIndex])
                     canvasArray[c] = canvasArray[c].astype(np.uint8)
+
+                currentImageIndex+=1
+                currentTileIndex=0
 
 def loadModel(name='models/testmodel.txt'):
 

@@ -5,6 +5,7 @@ import os
 import argparse
 import time
 import datetime
+import matplotlib.pyplot as plt
 
 #our own modules
 import utils.utils as utils
@@ -36,11 +37,13 @@ def loadModel(modelpath):
 
     # receives a list of puzzled together images and the name of the current original image
     def atEachImage(canvasArray,imageName):
-        cv2.destroyAllWindows()
+        plt.rcParams["figure.figsize"] = (15,5)
         for i in range(len(canvasArray)):
-            canvas = canvasArray[i]
-            cv2.imshow(imageName+"-"+str(i),canvas)
-        cv2.waitKey(0)
+            plt.subplot(1,len(canvasArray),i+1)
+            plt.axis('off')
+            plt.grid(visible=None)
+            plt.imshow(canvasArray[i])
+        plt.show()
 
     #I wrote this really weird wrapper to puzzle the patches back together to an image
     #it takes the above defined functions as arguments and merges the patches to the whole image again (for n images)
