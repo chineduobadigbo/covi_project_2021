@@ -18,19 +18,19 @@ VAL_SAVE_PATH = "data/val_train_images_mse/"
 def flattenListOfLists(t):
     return [item for sublist in t for item in sublist]
 
-def dataLoadWrapper(patches): #dataloader length is number of images/batchsize
-    return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=1024, shuffle=False,num_workers=0, pin_memory=True)
+def dataLoadWrapper(patches, batchSize): #dataloader length is number of images/batchsize
+    return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
-def loadImages(file_name='/0-B01.png', size=None): #so far, this only loads the images of one camera in the training set
+def loadImages(file_name='/0-B01.png', base_dir=BASE_TRAIN_PATH, size=None): #so far, this only loads the images of one camera in the training set
     patches_list = []
     mapping_list = []
     resolution_list = []
     image_name_list = []
     tileCount_list = []
-    for root, dirs, files in os.walk(BASE_TRAIN_PATH, topdown=False):
+    for root, dirs, files in os.walk(base_dir, topdown=False):
         for name in dirs:
             sub_folder_image_name = name +file_name
-            img_path = BASE_TRAIN_PATH + sub_folder_image_name
+            img_path = base_dir + sub_folder_image_name
             slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
             patches,mapping,resolution, tileCount = sliceImage(slice_img_path)
             patches_list.append(patches)
