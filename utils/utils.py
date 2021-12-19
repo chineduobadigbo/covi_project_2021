@@ -2,7 +2,9 @@ import cv2
 import torch
 import numpy as np
 import os
+import json
 import pathlib
+from sklearn.cluster import MiniBatchKMeans
 
 from torch._C import device
 
@@ -10,27 +12,24 @@ import utils.autoencoder_boilerplate as ae
 
 COLOR_MAPPING = cv2.COLOR_RGB2HSV
 INVERSE_COLOR_MAPPING = cv2.COLOR_HSV2RGB
-BASE_TRAIN_PATH = "data/train/"
-SAVE_PATH = "data/train_images_mse/"
-VAL_SAVE_PATH = "data/val_train_images_mse/"
 
 
 def flattenListOfLists(t):
     return [item for sublist in t for item in sublist]
 
-def dataLoadWrapper(patches, batchSize): #dataloader length is number of images/batchsize
+def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of images/batchsize
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
-def loadImages(file_name='/0-B01.png', base_dir=BASE_TRAIN_PATH, size=None): #so far, this only loads the images of one camera in the training set
+def loadImages(file_name='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
     patches_list = []
     mapping_list = []
     resolution_list = []
     image_name_list = []
     tileCount_list = []
-    for root, dirs, files in os.walk(base_dir, topdown=False):
+    for root, dirs, files in os.walk(baseDir, topdown=False):
         for name in dirs:
             sub_folder_image_name = name +file_name
-            img_path = base_dir + sub_folder_image_name
+            img_path = baseDir + sub_folder_image_name
             slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
             patches,mapping,resolution, tileCount = sliceImage(slice_img_path)
             patches_list.append(patches)
@@ -79,10 +78,10 @@ def pickBestDevice():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    print("Using device: ", device)
+    print('Using device: {device}')
     return device
 
-def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount):
+def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model):
 
     currentTileIndex=0 #index of the current tile within one image
     currentImageIndex=0
@@ -94,7 +93,8 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
     
     for item in dataloader:
         item = item.to(device)
-        reconstructedTensor = atEachBatch(item)
+        reconstructedTensor = atEachBatch(model, item)
+        print(f'{item.shape = }')
         for i in range(len(item)):
             patchTensor = item[i].cpu()
             reconstructedPatchTensor = reconstructedTensor[i].cpu()
@@ -120,3 +120,45 @@ def loadModel(name='models/testmodel.txt'):
     model = ae.Autoencoder()
     model.load_state_dict(torch.load(name, map_location=device))
     return model
+
+def saveTrainMetrics(fileName, metricDict):
+    with open(fileName, 'w') as fp:
+        json.dump(metricDict, fp)
+
+def createModelOptimizer():
+    model = ae.Autoencoder()
+    model.to(device)
+    criterion = torch.nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
+    return model, criterion, optimizer
+
+# applies blur to a single patch
+def blurMapWrapper(patch):
+    blurredPatch = cv2.GaussianBlur(patch, (5,5), cv2.BORDER_DEFAULT)
+    return blurredPatch
+
+# effifciently applies blur to list of patches
+def blurPatches(patchList):
+    vFuncBlur = np.vectorize(blurMapWrapper, signature='(m,n,c)->(m,n,c)')
+    blurredPatchList = vFuncBlur(np.array(patchList))
+    return blurredPatchList
+
+def quantizeMapWrapper(patch):
+    bgrPatch = cv2.cvtColor(patch, INVERSE_COLOR_MAPPING)
+    (h, w) = bgrPatch.shape[:2]
+    labPatch = cv2.cvtColor(bgrPatch, cv2.COLOR_RGB2LAB)
+    labPatch = labPatch.reshape((labPatch.shape[0] * labPatch.shape[1], 3))
+    clt = MiniBatchKMeans(5)
+    labels = clt.fit_predict(labPatch)
+    quant = clt.cluster_centers_.astype("uint8")[labels]
+    quant = quant.reshape((h, w, 3))
+    quant = cv2.cvtColor(quant, cv2.COLOR_LAB2RGB)
+    quant = cv2.cvtColor(quant, COLOR_MAPPING)
+    return quant
+
+def quantizePatches(patchList):
+    vFuncQuant = np.vectorize(quantizeMapWrapper, signature='(m,n,c)->(m,n,c)')
+    quantizedPatchList = vFuncQuant(np.array(patchList))
+    return quantizedPatchList
+    
+
