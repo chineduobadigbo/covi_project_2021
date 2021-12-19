@@ -8,6 +8,8 @@ import datetime
 import matplotlib.pyplot as plt
 import colorsys
 
+from torch.utils import data
+
 #our own modules
 import utils.utils as utils
 import utils.autoencoder_boilerplate as ae
