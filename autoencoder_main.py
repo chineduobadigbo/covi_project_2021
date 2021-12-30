@@ -8,6 +8,7 @@ import datetime
 import matplotlib.pyplot as plt
 import colorsys
 from pathlib import Path
+import timeit
 
 #our own modules
 import utils.utils as utils
@@ -42,23 +43,18 @@ def atEachImage(canvasArray,imageName):
     print(f'{imageName = }')
     sub_folder = imageName.split('/')[0]
     imgName = imageName.split('/')[-1]
-    writeDir = SAVE_PATH+'{}'.format(sub_folder)
+    writeDir = SAVE_PATH+sub_folder
     Path(writeDir).mkdir(parents=True, exist_ok=True)
     plt.rcParams['figure.figsize'] = (15,5)
     for i, (canvas, imgType) in enumerate(zip(canvasArray, imageOrder)):
         cv2.imwrite(writeDir+'/'+f'{imgType}_{imgName}', canvas)
-        plt.subplot(1,len(canvasArray),i+1)
-        plt.axis('off')
-        plt.grid(visible=None)
-        plt.imshow(canvas)
-    plt.show()
 
-def loadModel(modelpath):
+def loadModel(modelpath, preprDict):
     print('Loading model...')
     model = utils.loadModel(modelpath)
     model.to(device)
-    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(file_name='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
-    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList))
+    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
+    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
     dataloader = utils.dataLoadWrapper(prepPatches)
     print(f'Number of patch batches: {len(dataloader)}')
 
@@ -69,27 +65,43 @@ def loadModel(modelpath):
 
 # loops over a list of provided functions 
 # which apply some preprocessing on the patchesList
-def applyPreprocessingFuncs(patchesList):
-    preprocessingList = [utils.blurPatches, utils.quantizePatches]
-    for prepr in preprocessingList:
-        patchesList = prepr(patchesList)
+def applyPreprocessingFuncs(patchesList, preprDict):
+    preprMapDict = {'blur': utils.blurPatches, 'quantize': utils.quantizePatches} # holds the corresponding function for each preprocessing step
+    # build list with functions based on which prepr steps are True
+    preprocessingList = []
+    for step, val in preprDict.items():
+        if val:
+            print(f'{step} was added to preprocessing pipeline')
+            preprocessingList.append((step, preprMapDict[step]))
+    # loop over chosen functions and and apply preprocessing
+    # these loops coudl be reduced to a single loop, this allows for a nicer log output though
+    for step, preprFunc in preprocessingList:
+        print(f'Applying {step}...')
+        t1 = timeit.default_timer()
+        patchesList = preprFunc(patchesList)
+        elapsed = timeit.default_timer() - t1
+        print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, validate=False):
-    print('Training model...')
+def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
+    print('Loading training images...')
     patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages()
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
     batchSize = len(flattenedpatchesList) if batchSize == -1 else batchSize
+    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
     print(f'{batchSize = }')
-    dataloader = utils.dataLoadWrapper(flattenedpatchesList, batchSize)
+    dataloader = utils.dataLoadWrapper(prepPatches, batchSize)
     if validate:
-        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(file_name='/4-B02.png', base_dir='data/validation/', size=5)
-        valdataloader = utils.dataLoadWrapper(utils.flattenListOfLists(valpatchesList), batchSize)
+        print('Loading validation images...')
+        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir='data/validation/', size=5)
+        valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+        valdataloader = utils.dataLoadWrapper(valPrepPatches, batchSize)
     else:
         meanValLoss = 0.0
     model, criterion, optimizer = utils.createModelOptimizer()
     lossPerEpoch = {}
-    start = time.time()
+    print('Training model...')
+    start = timeit.default_timer()
     for e in range(epochs):
         trainOutputStr = ''
         epochTrainLoss = 0.0
@@ -119,11 +131,11 @@ def trainModel(modelpath, epochs, batchSize, validate=False):
             valOutputStr = f' Validation Loss: {(meanValLoss):.4f}'
         print(trainOutputStr+valOutputStr)
         lossPerEpoch[e] = {'train_loss': meanTrainLoss, 'valid_loss': meanValLoss}
-    trainTime = (time.time()-start)/60
-    lossPerEpoch['miscInfo'] = {'trainTime': trainTime}
+    trainTime = (timeit.default_timer()-start)/60
+    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict}
     print(f'{trainTime = }min')
     torch.save(model.state_dict(), modelpath)
-    loadModel(modelpath)
+    loadModel(modelpath, preprDict)
     return model, lossPerEpoch
 
 if __name__ == '__main__':
@@ -131,14 +143,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train autoencoder')
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
     parser.add_argument('--model', default='models/testmodel.txt', type=str, help='Path to the model file')
-    parser.add_argument('--batchSize', default=1024, type=int, help='Batch size during training and validation. Set to -1 to take the complete trainingset size')
+    parser.add_argument('--batchSize', default=-1, type=int, help='Batch size during training and validation. Set to -1 to take the complete trainingset size')
     parser.add_argument('--validate', default=False, action='store_true', help='Whether validation should be done during training')
     parser.add_argument('--train', dest='train', default=False, action='store_true', help='Dont load the model, train it instead')
+    parser.add_argument('--blur', dest='blur', default=False, action='store_true', help='Apply blur during preprocessing')
+    parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
     args = parser.parse_args()
-
+    preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, validate=args.validate)
-        metricFileName = 'models/metrics.json'
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, validate=args.validate)
+        metricFileName = f'models/metrics_{ args.model.split("/")[-1].replace(".txt", "") }.json'
         utils.saveTrainMetrics(metricFileName, lossPerEpoch)
     else:
-        loadModel(args.model)
+        loadModel(args.model, preprDict)

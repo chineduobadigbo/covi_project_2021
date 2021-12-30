@@ -18,9 +18,10 @@ def flattenListOfLists(t):
     return [item for sublist in t for item in sublist]
 
 def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of images/batchsize
+    batchSize = batchSize if batchSize <= len(patches) else len(patches)
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
-def loadImages(file_name='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
+def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
     patches_list = []
     mapping_list = []
     resolution_list = []
@@ -28,7 +29,7 @@ def loadImages(file_name='/0-B01.png', baseDir='data/train/', size=None): #so fa
     tileCount_list = []
     for root, dirs, files in os.walk(baseDir, topdown=False):
         for name in dirs:
-            sub_folder_image_name = name +file_name
+            sub_folder_image_name = name +fileName
             img_path = baseDir + sub_folder_image_name
             slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
             patches,mapping,resolution, tileCount = sliceImage(slice_img_path)
@@ -148,7 +149,7 @@ def quantizeMapWrapper(patch):
     (h, w) = bgrPatch.shape[:2]
     labPatch = cv2.cvtColor(bgrPatch, cv2.COLOR_RGB2LAB)
     labPatch = labPatch.reshape((labPatch.shape[0] * labPatch.shape[1], 3))
-    clt = MiniBatchKMeans(5)
+    clt = MiniBatchKMeans(16)
     labels = clt.fit_predict(labPatch)
     quant = clt.cluster_centers_.astype("uint8")[labels]
     quant = quant.reshape((h, w, 3))
