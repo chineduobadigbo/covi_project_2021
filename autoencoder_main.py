@@ -94,7 +94,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
     if validate:
         print('Loading validation images...')
         valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir='data/validation/', size=5)
-        valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+        valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(valpatchesList), preprDict)
         valdataloader = utils.dataLoadWrapper(valPrepPatches, batchSize)
     else:
         meanValLoss = 0.0
