@@ -79,7 +79,7 @@ def pickBestDevice():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    print('Using device: {device}')
+    print(f'Using device: {device}')
     return device
 
 def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model):
