@@ -10,6 +10,8 @@ import colorsys
 from pathlib import Path
 import timeit
 
+from torch.utils import data
+
 #our own modules
 import utils.utils as utils
 SAVE_PATH = 'data/train_images_mse/'
