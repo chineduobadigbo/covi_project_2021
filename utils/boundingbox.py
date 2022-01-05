@@ -57,6 +57,7 @@ class BBNet(nn.Module):
 
 def generateTrainingImage(x,y,w,h,r,blank):
     #print("x: {}, y: {}, w: {}, h: {}, r: {}".format(x,y,w,h,r))
+
     canvas = np.zeros((1024, 1024, 3), dtype=np.uint8)
     if blank:
         return canvas, (float(0),float(0),float(0),float(0))
@@ -88,8 +89,8 @@ def generateTrainingBatch(batchSize,split):
     maxHeight = 200
     print("starting to generate training data")
     for i in range(int(batchSize*split)):
-        x = np.random.randint(0, 1024-maxWidth)
-        y = np.random.randint(0, 1024-maxHeight)
+        x = np.random.randint(192, 832-maxWidth)
+        y = np.random.randint(0, 1024-maxHeight) #these weird numbers are picked because the training data is black on top and on the bottom
         w = np.random.randint(100, maxWidth)
         h = np.random.randint(100, maxHeight)
         r = np.random.randint(0, 360)
@@ -112,7 +113,7 @@ def generateTrainingBatch(batchSize,split):
 
     return data, labels
 
-def showImageWithBoundingBox(image, boundingbox, original=None):
+def showImageWithBoundingBox(image, boundingbox, original=None): #original denotes the bounding box label
     x1,y1,x2,y2 = boundingbox
     cWidth = image.shape[1]
     cHeight = image.shape[0]
@@ -131,6 +132,7 @@ def increaseDimensionality(tensor):
     img = tensor.detach().numpy()
     img = np.moveaxis(img,0,2)
     print("IMAGE SHAPE: {}".format(img.shape))
+    #img = tensor
     img *= 255
     img = img.astype(np.uint8)
     img = cv2.resize(img, (1024,1024), interpolation = cv2.INTER_NEAREST)
@@ -140,9 +142,12 @@ def increaseDimensionality(tensor):
 
 def sliceAndComputeFakeMSE(image):
     patchSize = (64,64)
+
+    bottomBorder = 2
+    topBorder = 13
+
     imgResolution = image.shape[:-1]
     patchCount = (int(imgResolution[0]/patchSize[0]),int(imgResolution[1]/patchSize[1]))
-
     for x in range(patchCount[0]):
         for y in range(patchCount[1]):
             xCoord = x*patchSize[0]
@@ -153,13 +158,17 @@ def sliceAndComputeFakeMSE(image):
                 mse += np.random.random()*50 #add noise to pathes where no human is present
             else:
                 mse -= np.random.random()*10 #remove noise from pathes where human is present
+
+            if x <= bottomBorder or x >= topBorder:
+                mse = 0
             #print("MSE: {}".format(mse))
             msebuffer = np.ones(patch.shape)*(mse,mse,mse)
             image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:] = msebuffer
 
+    cv2.imshow("image", image)
+    cv2.waitKey(0)
     return image
-    #cv2.imshow("image", image)
-    #cv2.waitKey(0)
+    
 
 def trainModel(dataloader):
     model = BBNet()
@@ -198,6 +207,20 @@ def testModel(dataloader):
             bb_output = output[i].detach().numpy()
             bb_original = y[i].detach().numpy()
             showImageWithBoundingBox(displayable, bb_output, bb_original)
+
+
+def getModel():
+    model = BBNet()
+    model.load_state_dict(torch.load("./utils/bbmodel.txt"))
+    model.eval()
+    return model
+
+def getBoundingBox(model, reducedImage):
+    dataset = BBDataset(np.array([reducedImage]),np.array([[0,0,1,1]]))
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True,num_workers=0, pin_memory=True)
+    for (X,y) in dataloader:
+        output = model(X).double()
+        return (output[0].detach().numpy())
 
 
 if __name__ == "__main__":

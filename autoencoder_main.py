@@ -14,6 +14,8 @@ from torch.utils import data
 
 #our own modules
 import utils.utils as utils
+import utils.boundingbox as bb
+
 SAVE_PATH = 'data/train_images_mse/'
 SAVE_PATH = 'data/train_images_mse/'
 VAL_SAVE_PATH = 'data/val_train_images_mse/'
@@ -36,8 +38,12 @@ def atEachPatch(patchTensor,reconstructedPatchTensor):
     # diffPatch = np.subtract(utils.blurMapWrapper(originalPatch),reconstructedPatch)
     diffPatch = np.subtract(originalPatch,reconstructedPatch)
     diffPatchHSV = cv2.cvtColor(diffPatch, cv2.COLOR_RGB2HSV)
+
+    #originalLAB = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2HSV)
+    #mse = np.square(np.mean(originalLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
+    #print(mse)
     mse = np.mean(np.square(diffPatchHSV[:,:,0]))*2
-    msePatch = np.ones(diffPatch.shape)*(mse,mse,100)
+    msePatch = np.ones(diffPatch.shape)*(mse,mse,mse)
     return [originalPatch, reconstructedPatch, diffPatch,msePatch]
 
 # receives a list of puzzled together images and the name of the current original image
@@ -51,19 +57,54 @@ def atEachImage(canvasArray,imageName):
     for i, (canvas, imgType) in enumerate(zip(canvasArray, imageOrder)):
         cv2.imwrite(writeDir+'/'+f'{imgType}_{imgName}', canvas)
 
-def loadModel(modelpath, preprDict):
+def loadModel(modelpath, preprDict, official):
     print('Loading model...')
     model = utils.loadModel(modelpath)
     model.to(device)
-    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
-    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
-    dataloader = utils.dataLoadWrapper(prepPatches)
-    print(f'Number of patch batches: {len(dataloader)}')
 
-    #I wrote this really weird wrapper to puzzle the patches back together to an image
-    #it takes the above defined functions as arguments and merges the patches to the whole image again (for n images)
-    utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
-    return model 
+    if official:
+        print('Loading official validation set...')
+        bbmodel = bb.getModel()
+        def customAtEachImage(canvasArray,imageName):
+            print(f'{imageName = }')
+            originalImage = canvasArray[0]
+            mseImage = canvasArray[3]
+            #originalLAB = cv2.cvtColor(originalImage, cv2.COLOR_RGB2HSV)
+            #completeMSE = np.square(np.mean(originalLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
+            #mseImage -= int(completeMSE)
+            reducedMSE = bb.reduceDimensionality(mseImage)
+            reducedMSE *= reducedMSE
+            reducedMSE *= reducedMSE
+            #cv2.imshow('mse', bb.increaseDimensionality(reducedMSE))
+            boundingboxes = bb.getBoundingBox(bbmodel, reducedMSE)
+            print(boundingboxes)
+            
+            #cv2.imshow('image', originalImage)
+            #cv2.imshow('mse', cv2.cvtColor(mseImage, cv2.COLOR_BGR2GRAY))
+            bb.showImageWithBoundingBox(originalImage, boundingboxes)
+            #cv2.waitKey(0)
+
+        folderDict = utils.loadValidationImages()
+        for datapoint,_ in folderDict.items():
+            print(datapoint)
+            for timepoint,_ in folderDict[datapoint].items(): #for now we only compute the middle timepoint(3)
+                print("\t",timepoint)
+                patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = folderDict[datapoint][timepoint]
+                prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+                dataloader = utils.dataLoadWrapper(prepPatches)
+                print(f'Number of patch batches: {len(dataloader)}')
+                utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+
+    else:
+        patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
+        prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+        dataloader = utils.dataLoadWrapper(prepPatches)
+        print(f'Number of patch batches: {len(dataloader)}')
+
+        #I wrote this really weird wrapper to puzzle the patches back together to an image
+        #it takes the above defined functions as arguments and merges the patches to the whole image again (for n images)
+        utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+        return model 
 
 # loops over a list of provided functions 
 # which apply some preprocessing on the patchesList
@@ -149,6 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--train', dest='train', default=False, action='store_true', help='Dont load the model, train it instead')
     parser.add_argument('--blur', dest='blur', default=False, action='store_true', help='Apply blur during preprocessing')
     parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
+    parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
@@ -156,4 +198,4 @@ if __name__ == '__main__':
         metricFileName = f'models/metrics_{ args.model.split("/")[-1].replace(".txt", "") }.json'
         utils.saveTrainMetrics(metricFileName, lossPerEpoch)
     else:
-        loadModel(args.model, preprDict)
+        loadModel(args.model, preprDict, args.official)

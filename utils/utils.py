@@ -21,6 +21,40 @@ def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of im
     batchSize = batchSize if batchSize <= len(patches) else len(patches)
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
+
+def loadValidationImages(timepoints = [3]):
+    validationDir = "data/validation/"
+
+    returnDict = {}
+
+    for root, dirs, _ in os.walk(validationDir, topdown=False):
+        for folder in dirs:
+            #print(folder)
+            folderDict = {}
+            for p in timepoints:
+                folderDict[p] = [[],[],[],[],[]]
+
+
+
+            for _, _, files in os.walk(os.path.join(pathlib.Path().resolve(), validationDir+folder), topdown=False):
+                for file in files:
+                    if(file.endswith(".png")):
+                        timepoint = int(file[0])
+
+                        if(timepoint in timepoints):
+                            imagePath = os.path.join(pathlib.Path().resolve(), validationDir+folder+"/"+file)
+                            patches,mapping,resolution,tileCount = sliceImage(imagePath)
+                            folderDict[timepoint][0].append(patches)
+                            folderDict[timepoint][1].append(mapping)
+                            folderDict[timepoint][2].append(resolution)
+                            folderDict[timepoint][3].append(folder+"/"+file)
+                            folderDict[timepoint][4].append(tileCount)
+
+            returnDict[folder] = folderDict
+
+    return returnDict
+
+
 def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
     patches_list = []
     mapping_list = []
