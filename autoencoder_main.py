@@ -37,7 +37,7 @@ def atEachPatch(patchTensor,reconstructedPatchTensor):
     originalPatch = utils.convertTensorToImage(patchTensor)
     reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor)
     # diffPatch = np.subtract(utils.blurMapWrapper(originalPatch),reconstructedPatch)
-    diffPatch = np.subtract(originalPatch,reconstructedPatch)
+    diffPatch = np.subtract(reconstructedPatch,originalPatch)
     diffPatchHSV = cv2.cvtColor(diffPatch, cv2.COLOR_RGB2HSV)
 
     #originalLAB = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2HSV)
@@ -72,7 +72,9 @@ def loadModel(modelpath, preprDict, official):
         def customAtEachImage(canvasArray,imageName):
             print(f'{imageName = }')
             originalImage = canvasArray[0]
+            recreatedImage = canvasArray[1]
             mseImage = canvasArray[3]
+            diffImage = canvasArray[2]
             #originalLAB = cv2.cvtColor(originalImage, cv2.COLOR_RGB2HSV)
             #completeMSE = np.square(np.mean(originalLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
             #mseImage -= int(completeMSE)
@@ -88,10 +90,10 @@ def loadModel(modelpath, preprDict, official):
                 global middleImage
                 middleImage = originalImage
             
-            #cv2.imshow('image', originalImage)
-            #cv2.imshow('mse', cv2.cvtColor(mseImage, cv2.COLOR_BGR2GRAY))
+            cv2.imshow('image', originalImage)
+            cv2.imshow('mse', diffImage)
             #bb.showImageWithBoundingBox(originalImage, boundingbox)
-            #cv2.waitKey(0)
+            cv2.waitKey(0)
 
         folderDict = utils.loadValidationImages()
         validationDict = {}

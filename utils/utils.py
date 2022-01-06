@@ -10,8 +10,8 @@ from torch._C import device
 
 import utils.autoencoder_boilerplate as ae
 
-COLOR_MAPPING = cv2.COLOR_RGB2HSV
-INVERSE_COLOR_MAPPING = cv2.COLOR_HSV2RGB
+COLOR_MAPPING = cv2.COLOR_BGR2HSV
+INVERSE_COLOR_MAPPING = cv2.COLOR_HSV2BGR
 
 
 def flattenListOfLists(t):
@@ -90,7 +90,7 @@ def sliceImage(imagepath):
             xCoord = x*patchSize[0]
             yCoord = y*patchSize[1]
             patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
-            patch = cv2.cvtColor(patch, COLOR_MAPPING)
+            #patch = cv2.cvtColor(patch, COLOR_MAPPING)
 
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
                 tileCount += 1
@@ -104,7 +104,8 @@ def convertTensorToImage(tensor):
     img = np.moveaxis(img,0,2)
     img *= 255
     img = img.astype(np.uint8)
-    rgbimg = cv2.cvtColor(img, INVERSE_COLOR_MAPPING)
+    #rgbimg = cv2.cvtColor(img, INVERSE_COLOR_MAPPING)
+    rgbimg = img
     return rgbimg
 
 def pickBestDevice():
@@ -179,7 +180,8 @@ def blurPatches(patchList):
     return blurredPatchList
 
 def quantizeMapWrapper(patch):
-    bgrPatch = cv2.cvtColor(patch, INVERSE_COLOR_MAPPING)
+    bgrPatch = patch
+    #bgrPatch = cv2.cvtColor(patch, INVERSE_COLOR_MAPPING)
     (h, w) = bgrPatch.shape[:2]
     labPatch = cv2.cvtColor(bgrPatch, cv2.COLOR_RGB2LAB)
     labPatch = labPatch.reshape((labPatch.shape[0] * labPatch.shape[1], 3))
@@ -188,7 +190,7 @@ def quantizeMapWrapper(patch):
     quant = clt.cluster_centers_.astype("uint8")[labels]
     quant = quant.reshape((h, w, 3))
     quant = cv2.cvtColor(quant, cv2.COLOR_LAB2RGB)
-    quant = cv2.cvtColor(quant, COLOR_MAPPING)
+    #quant = cv2.cvtColor(quant, COLOR_MAPPING)
     return quant
 
 def quantizePatches(patchList):
