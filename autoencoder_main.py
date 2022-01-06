@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import colorsys
 from pathlib import Path
 import timeit
+import json
 
 from torch.utils import data
 
@@ -65,6 +66,9 @@ def loadModel(modelpath, preprDict, official):
     if official:
         print('Loading official validation set...')
         bbmodel = bb.getModel()
+        boundingBoxes = {}
+        global middleImage
+        middleImage = None
         def customAtEachImage(canvasArray,imageName):
             print(f'{imageName = }')
             originalImage = canvasArray[0]
@@ -76,24 +80,38 @@ def loadModel(modelpath, preprDict, official):
             reducedMSE *= reducedMSE
             reducedMSE *= reducedMSE
             #cv2.imshow('mse', bb.increaseDimensionality(reducedMSE))
-            boundingboxes = bb.getBoundingBox(bbmodel, reducedMSE)
-            print(boundingboxes)
+            boundingbox = bb.getBoundingBox(bbmodel, reducedMSE)
+            #print(boundingbox)
+
+            boundingBoxes[imageName] = boundingbox
+            if imageName.endswith("B01.png"):
+                global middleImage
+                middleImage = originalImage
             
             #cv2.imshow('image', originalImage)
             #cv2.imshow('mse', cv2.cvtColor(mseImage, cv2.COLOR_BGR2GRAY))
-            bb.showImageWithBoundingBox(originalImage, boundingboxes)
+            #bb.showImageWithBoundingBox(originalImage, boundingbox)
             #cv2.waitKey(0)
 
         folderDict = utils.loadValidationImages()
+        validationDict = {}
         for datapoint,_ in folderDict.items():
             print(datapoint)
             for timepoint,_ in folderDict[datapoint].items(): #for now we only compute the middle timepoint(3)
-                print("\t",timepoint)
+                #print("\t",timepoint)
                 patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = folderDict[datapoint][timepoint]
                 prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
                 dataloader = utils.dataLoadWrapper(prepPatches)
-                print(f'Number of patch batches: {len(dataloader)}')
+                #print(f'Number of patch batches: {len(dataloader)}')
                 utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+                combinedBoxes = bb.combineBoundingBoxes(datapoint,boundingBoxes,middleImage)
+                validationDict[datapoint] = combinedBoxes
+                boundingBoxes = {}
+                middleImage = None
+        
+        with open('validation_boxes.json', 'w') as fp:
+            json.dump(validationDict, fp)
+        print("FINISHED")
 
     else:
         patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
