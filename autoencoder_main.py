@@ -10,6 +10,8 @@ import colorsys
 from pathlib import Path
 import timeit
 import json
+import datetime
+import colour
 
 from torch.utils import data
 
@@ -34,17 +36,28 @@ def atEachBatch(model, batch):
 #and returns a list of nparray patches which has to be the same length that you specify when calling puzzleBackTogether
 #this allows you to do different computations per patch that then get merged into one final image
 def atEachPatch(patchTensor,reconstructedPatchTensor):
-    originalPatch = utils.convertTensorToImage(patchTensor)
+    originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor))
     reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor)
-    # diffPatch = np.subtract(utils.blurMapWrapper(originalPatch),reconstructedPatch)
-    diffPatch = np.subtract(reconstructedPatch,originalPatch)
-    diffPatchHSV = cv2.cvtColor(diffPatch, cv2.COLOR_RGB2HSV)
+    diffPatch = np.subtract(originalPatch,reconstructedPatch)
+    originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2LAB)
+    reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_RGB2LAB)
+    # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
+    originalHist = cv2.calcHist([originalPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    originalHist = cv2.normalize(originalHist, originalHist).flatten()
+    reconstructedHist = cv2.calcHist([reconstructedPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    reconstructedHist = cv2.normalize(reconstructedHist, reconstructedHist).flatten()
 
-    #originalLAB = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2HSV)
-    #mse = np.square(np.mean(originalLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
+
+    #mse = np.mean(colour.delta_E(cv2.cvtColor(originalPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB), cv2.cvtColor(reconstructedPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB)))**2
+    # histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR))+1)**2
+    histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*100
+    
+    # mse = np.square(np.mean(diffPatchLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
     #print(mse)
-    mse = np.mean(np.square(diffPatchHSV[:,:,0]))*2
-    msePatch = np.ones(diffPatch.shape)*(mse,mse,mse)
+    # mse = np.mean(np.square(diffPatchHSV[:,:,0]))
+    # print(f'{location}, hist_diff: {histDiff}')
+    mse = histDiff
+    msePatch = np.ones(originalPatch.shape)*(mse,mse,mse)
     return [originalPatch, reconstructedPatch, diffPatch,msePatch]
 
 # receives a list of puzzled together images and the name of the current original image
@@ -58,7 +71,7 @@ def atEachImage(canvasArray,imageName):
     for i, (canvas, imgType) in enumerate(zip(canvasArray, imageOrder)):
         cv2.imwrite(writeDir+'/'+f'{imgType}_{imgName}', canvas)
 
-def loadModel(modelpath, preprDict, official):
+def loadModel(modelpath, preprDict, official=False):
     print('Loading model...')
     model = utils.loadModel(modelpath)
     model.to(device)
@@ -138,6 +151,8 @@ def applyPreprocessingFuncs(patchesList, preprDict):
             preprocessingList.append((step, preprMapDict[step]))
     # loop over chosen functions and and apply preprocessing
     # these loops coudl be reduced to a single loop, this allows for a nicer log output though
+    if len(preprocessingList) == 0:
+        print('No preprocessing steps selected')
     for step, preprFunc in preprocessingList:
         print(f'Applying {step}...')
         t1 = timeit.default_timer()
@@ -156,7 +171,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
     dataloader = utils.dataLoadWrapper(prepPatches, batchSize)
     if validate:
         print('Loading validation images...')
-        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir='data/validation/', size=5)
+        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir='data/train/', size=5)
         valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(valpatchesList), preprDict)
         valdataloader = utils.dataLoadWrapper(valPrepPatches, batchSize)
     else:
@@ -170,6 +185,13 @@ def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
         epochTrainLoss = 0.0
         model.train()
         for (item) in dataloader:
+            # testInd = 20
+            # print(np.moveaxis(item[testInd].numpy(), 0, 2).shape)
+            # print(item.numpy().shape)
+            # cv2.imshow('ImageWindow', np.moveaxis(item[testInd].numpy(), 0, 2))
+            # utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+            # print('Done')
+            # cv2.waitKey()
             item = item.to(device)
             recon = model(item)
             loss = criterion(recon, item)
@@ -195,7 +217,9 @@ def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
         print(trainOutputStr+valOutputStr)
         lossPerEpoch[e] = {'train_loss': meanTrainLoss, 'valid_loss': meanValLoss}
     trainTime = (timeit.default_timer()-start)/60
-    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict}
+    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    metricFileName = f'models/metrics_{ modelpath.split("/")[-1].replace(".txt", "") }.json'
+    utils.saveTrainMetrics(metricFileName, lossPerEpoch)
     print(f'{trainTime = }min')
     torch.save(model.state_dict(), modelpath)
     loadModel(modelpath, preprDict)
@@ -215,7 +239,5 @@ if __name__ == '__main__':
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
         model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, validate=args.validate)
-        metricFileName = f'models/metrics_{ args.model.split("/")[-1].replace(".txt", "") }.json'
-        utils.saveTrainMetrics(metricFileName, lossPerEpoch)
     else:
-        loadModel(args.model, preprDict, args.official)
+        loadModel(args.model, preprDict, official=args.official)

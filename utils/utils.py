@@ -19,6 +19,7 @@ def flattenListOfLists(t):
 
 def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of images/batchsize
     batchSize = batchSize if batchSize <= len(patches) else len(patches)
+    print(f'Creating Dataloader with batchSize {batchSize}')
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
 
@@ -78,6 +79,7 @@ def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far
         return patches_list, mapping_list, resolution_list, image_name_list, tileCount_list
 
 def sliceImage(imagepath):
+    print(f'Reading and slicing image: {imagepath}')
     image = cv2.imread(imagepath)
     patchSize = (64,64)
     imgResolution = image.shape[:-1]
@@ -134,8 +136,8 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
         for i in range(len(item)):
             patchTensor = item[i].cpu()
             reconstructedPatchTensor = reconstructedTensor[i].cpu()
-            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor)
             location = mappingsList[currentImageIndex][currentTileIndex]
+            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor)
 
             for c in range(canvasCount):    
                 canvasArray[c][location[0]:location[0]+patchArray[c].shape[0],location[1]:location[1]+patchArray[c].shape[1],:] = patchArray[c]
