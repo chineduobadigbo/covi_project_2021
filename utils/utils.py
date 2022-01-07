@@ -13,6 +13,12 @@ import utils.autoencoder_boilerplate as ae
 COLOR_MAPPING = cv2.COLOR_BGR2HSV
 INVERSE_COLOR_MAPPING = cv2.COLOR_HSV2BGR
 
+ColorMappingGDict = {
+    'RGB': {'mapping': cv2.COLOR_BGR2RGB, 'inverse': cv2.COLOR_RGB2BGR}, 
+    'HSV': {'mapping': cv2.COLOR_BGR2HSV, 'inverse': cv2.COLOR_HSV2BGR}, 
+    'LAB': {'mapping': cv2.COLOR_BGR2LAB, 'inverse': cv2.COLOR_LAB2BGR}
+    }
+
 
 def flattenListOfLists(t):
     return [item for sublist in t for item in sublist]
@@ -23,7 +29,7 @@ def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of im
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
 
-def loadValidationImages(timepoints = [3]):
+def loadValidationImages(color, timepoints = [3]):
     validationDir = "data/validation/"
 
     returnDict = {}
@@ -44,7 +50,7 @@ def loadValidationImages(timepoints = [3]):
 
                         if(timepoint in timepoints):
                             imagePath = os.path.join(pathlib.Path().resolve(), validationDir+folder+"/"+file)
-                            patches,mapping,resolution,tileCount = sliceImage(imagePath)
+                            patches,mapping,resolution,tileCount = sliceImage(imagePath, color)
                             folderDict[timepoint][0].append(patches)
                             folderDict[timepoint][1].append(mapping)
                             folderDict[timepoint][2].append(resolution)
@@ -56,7 +62,7 @@ def loadValidationImages(timepoints = [3]):
     return returnDict
 
 
-def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
+def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
     patches_list = []
     mapping_list = []
     resolution_list = []
@@ -67,7 +73,7 @@ def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far
             sub_folder_image_name = name +fileName
             img_path = baseDir + sub_folder_image_name
             slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
-            patches,mapping,resolution, tileCount = sliceImage(slice_img_path)
+            patches,mapping,resolution, tileCount = sliceImage(slice_img_path, color)
             patches_list.append(patches)
             mapping_list.append(mapping)
             resolution_list.append(resolution)
@@ -78,7 +84,7 @@ def loadImages(fileName='/0-B01.png', baseDir='data/train/', size=None): #so far
     else:
         return patches_list, mapping_list, resolution_list, image_name_list, tileCount_list
 
-def sliceImage(imagepath):
+def sliceImage(imagepath, color):
     print(f'Reading and slicing image: {imagepath}')
     image = cv2.imread(imagepath)
     patchSize = (64,64)
@@ -92,7 +98,7 @@ def sliceImage(imagepath):
             xCoord = x*patchSize[0]
             yCoord = y*patchSize[1]
             patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
-            #patch = cv2.cvtColor(patch, COLOR_MAPPING)
+            patch = cv2.cvtColor(patch, ColorMappingGDict[color]['mapping'])
 
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
                 tileCount += 1
@@ -101,14 +107,14 @@ def sliceImage(imagepath):
 
     return patches,mapping,image.shape,tileCount
 
-def convertTensorToImage(tensor):
+# always returns BGR image
+def convertTensorToImage(tensor, color):
     img = tensor.detach().numpy()
     img = np.moveaxis(img,0,2)
     img *= 255
     img = img.astype(np.uint8)
-    #rgbimg = cv2.cvtColor(img, INVERSE_COLOR_MAPPING)
-    rgbimg = img
-    return rgbimg
+    bgrImg = cv2.cvtColor(img, ColorMappingGDict[color]['inverse'])
+    return bgrImg
 
 def pickBestDevice():
     global device
@@ -119,7 +125,7 @@ def pickBestDevice():
     print(f'Using device: {device}')
     return device
 
-def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model):
+def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model, color):
 
     currentTileIndex=0 #index of the current tile within one image
     currentImageIndex=0
@@ -137,7 +143,7 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
             patchTensor = item[i].cpu()
             reconstructedPatchTensor = reconstructedTensor[i].cpu()
             location = mappingsList[currentImageIndex][currentTileIndex]
-            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor)
+            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor, color)
 
             for c in range(canvasCount):    
                 canvasArray[c][location[0]:location[0]+patchArray[c].shape[0],location[1]:location[1]+patchArray[c].shape[1],:] = patchArray[c]
@@ -176,28 +182,29 @@ def blurMapWrapper(patch):
     return blurredPatch
 
 # effifciently applies blur to list of patches
-def blurPatches(patchList):
+def blurPatches(patchList, color):
     vFuncBlur = np.vectorize(blurMapWrapper, signature='(m,n,c)->(m,n,c)')
     blurredPatchList = vFuncBlur(np.array(patchList))
     return blurredPatchList
 
-def quantizeMapWrapper(patch):
+def quantizeMapWrapper(patch, color):
     bgrPatch = patch
-    #bgrPatch = cv2.cvtColor(patch, INVERSE_COLOR_MAPPING)
+    bgrPatch = cv2.cvtColor(patch, ColorMappingGDict[color]['inverse'])
+    rgbPatch = cv2.cvtColor(bgrPatch, cv2.COLOR_BGR2RGB)
     (h, w) = bgrPatch.shape[:2]
-    labPatch = cv2.cvtColor(bgrPatch, cv2.COLOR_RGB2LAB)
+    labPatch = cv2.cvtColor(rgbPatch, cv2.COLOR_RGB2LAB)
     labPatch = labPatch.reshape((labPatch.shape[0] * labPatch.shape[1], 3))
     clt = MiniBatchKMeans(16)
     labels = clt.fit_predict(labPatch)
     quant = clt.cluster_centers_.astype("uint8")[labels]
     quant = quant.reshape((h, w, 3))
-    quant = cv2.cvtColor(quant, cv2.COLOR_LAB2RGB)
-    #quant = cv2.cvtColor(quant, COLOR_MAPPING)
+    quant = cv2.cvtColor(quant, cv2.COLOR_LAB2BGR)
+    quant = cv2.cvtColor(quant, ColorMappingGDict[color]['mapping'])
     return quant
 
-def quantizePatches(patchList):
+def quantizePatches(patchList, color):
     vFuncQuant = np.vectorize(quantizeMapWrapper, signature='(m,n,c)->(m,n,c)')
-    quantizedPatchList = vFuncQuant(np.array(patchList))
+    quantizedPatchList = vFuncQuant(np.array(patchList), color)
     return quantizedPatchList
     
 

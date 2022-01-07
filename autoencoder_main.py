@@ -35,12 +35,12 @@ def atEachBatch(model, batch):
 #receives the original and reconstructed patch tensors,
 #and returns a list of nparray patches which has to be the same length that you specify when calling puzzleBackTogether
 #this allows you to do different computations per patch that then get merged into one final image
-def atEachPatch(patchTensor,reconstructedPatchTensor):
-    originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor))
-    reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor)
+def atEachPatch(patchTensor,reconstructedPatchTensor, color):
+    originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor, color), color)
+    reconstructedPatch = utils.blurMapWrapper(utils.convertTensorToImage(reconstructedPatchTensor, color))
     diffPatch = np.subtract(originalPatch,reconstructedPatch)
-    originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2LAB)
-    reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_RGB2LAB)
+    originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_BGR2LAB)
+    reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_BGR2LAB)
     # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
     originalHist = cv2.calcHist([originalPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     originalHist = cv2.normalize(originalHist, originalHist).flatten()
@@ -71,7 +71,7 @@ def atEachImage(canvasArray,imageName):
     for i, (canvas, imgType) in enumerate(zip(canvasArray, imageOrder)):
         cv2.imwrite(writeDir+'/'+f'{imgType}_{imgName}', canvas)
 
-def loadModel(modelpath, preprDict, official=False):
+def loadModel(modelpath, preprDict, color, official=False):
     print('Loading model...')
     model = utils.loadModel(modelpath)
     model.to(device)
@@ -108,17 +108,17 @@ def loadModel(modelpath, preprDict, official=False):
             #bb.showImageWithBoundingBox(originalImage, boundingbox)
             cv2.waitKey(0)
 
-        folderDict = utils.loadValidationImages()
+        folderDict = utils.loadValidationImages(color)
         validationDict = {}
         for datapoint,_ in folderDict.items():
             print(datapoint)
             for timepoint,_ in folderDict[datapoint].items(): #for now we only compute the middle timepoint(3)
                 #print("\t",timepoint)
                 patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = folderDict[datapoint][timepoint]
-                prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+                prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict, color)
                 dataloader = utils.dataLoadWrapper(prepPatches)
                 #print(f'Number of patch batches: {len(dataloader)}')
-                utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+                utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
                 combinedBoxes = bb.combineBoundingBoxes(datapoint,boundingBoxes,middleImage)
                 validationDict[datapoint] = combinedBoxes
                 boundingBoxes = {}
@@ -129,19 +129,19 @@ def loadModel(modelpath, preprDict, official=False):
         print("FINISHED")
 
     else:
-        patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
-        prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+        patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color, fileName='/4-B02.png', baseDir=BASE_TRAIN_PATH, size=5)
+        prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict, color)
         dataloader = utils.dataLoadWrapper(prepPatches)
         print(f'Number of patch batches: {len(dataloader)}')
 
         #I wrote this really weird wrapper to puzzle the patches back together to an image
         #it takes the above defined functions as arguments and merges the patches to the whole image again (for n images)
-        utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+        utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
         return model 
 
 # loops over a list of provided functions 
 # which apply some preprocessing on the patchesList
-def applyPreprocessingFuncs(patchesList, preprDict):
+def applyPreprocessingFuncs(patchesList, preprDict, color):
     preprMapDict = {'blur': utils.blurPatches, 'quantize': utils.quantizePatches} # holds the corresponding function for each preprocessing step
     # build list with functions based on which prepr steps are True
     preprocessingList = []
@@ -156,23 +156,23 @@ def applyPreprocessingFuncs(patchesList, preprDict):
     for step, preprFunc in preprocessingList:
         print(f'Applying {step}...')
         t1 = timeit.default_timer()
-        patchesList = preprFunc(patchesList)
+        patchesList = preprFunc(patchesList, color)
         elapsed = timeit.default_timer() - t1
         print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
+def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False):
     print('Loading training images...')
-    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages()
+    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color)
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
     batchSize = len(flattenedpatchesList) if batchSize == -1 else batchSize
-    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict)
+    prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict, color)
     print(f'{batchSize = }')
     dataloader = utils.dataLoadWrapper(prepPatches, batchSize)
     if validate:
         print('Loading validation images...')
-        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(fileName='/4-B02.png', baseDir='data/train/', size=5)
-        valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(valpatchesList), preprDict)
+        valpatchesList, valmappingsList, valresolutionsList, valimageNamesList, valtileCountsList = utils.loadImages(color, fileName='/4-B02.png', baseDir='data/train/', size=5)
+        valPrepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(valpatchesList), preprDict, color)
         valdataloader = utils.dataLoadWrapper(valPrepPatches, batchSize)
     else:
         meanValLoss = 0.0
@@ -189,7 +189,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, validate=False):
             # print(np.moveaxis(item[testInd].numpy(), 0, 2).shape)
             # print(item.numpy().shape)
             # cv2.imshow('ImageWindow', np.moveaxis(item[testInd].numpy(), 0, 2))
-            # utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model)
+            # utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
             # print('Done')
             # cv2.waitKey()
             item = item.to(device)
@@ -229,6 +229,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train autoencoder')
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
     parser.add_argument('--model', default='models/testmodel.txt', type=str, help='Path to the model file')
+    parser.add_argument('--color', default='RGB', type=str, help='The color space used for training (RGB, HSV, LAB)')
     parser.add_argument('--batchSize', default=-1, type=int, help='Batch size during training and validation. Set to -1 to take the complete trainingset size')
     parser.add_argument('--validate', default=False, action='store_true', help='Whether validation should be done during training')
     parser.add_argument('--train', dest='train', default=False, action='store_true', help='Dont load the model, train it instead')
@@ -238,6 +239,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, validate=args.validate)
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate)
     else:
-        loadModel(args.model, preprDict, official=args.official)
+        loadModel(args.model, preprDict, args.color, official=args.official)
