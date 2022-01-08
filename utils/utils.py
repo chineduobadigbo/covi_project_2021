@@ -63,6 +63,7 @@ def loadValidationImages(color, timepoints = [3]):
 
 
 def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
+    print(f'Loading images into {color} space...')
     patches_list = []
     mapping_list = []
     resolution_list = []
@@ -85,7 +86,6 @@ def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None): 
         return patches_list, mapping_list, resolution_list, image_name_list, tileCount_list
 
 def sliceImage(imagepath, color):
-    print(f'Reading and slicing image: {imagepath}')
     image = cv2.imread(imagepath)
     patchSize = (64,64)
     imgResolution = image.shape[:-1]

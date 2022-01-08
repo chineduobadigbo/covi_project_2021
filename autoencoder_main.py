@@ -11,7 +11,7 @@ from pathlib import Path
 import timeit
 import json
 import datetime
-import colour
+# import colour
 
 from torch.utils import data
 
@@ -222,7 +222,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False):
     utils.saveTrainMetrics(metricFileName, lossPerEpoch)
     print(f'{trainTime = }min')
     torch.save(model.state_dict(), modelpath)
-    loadModel(modelpath, preprDict)
+    loadModel(modelpath, preprDict, color)
     return model, lossPerEpoch
 
 if __name__ == '__main__':
