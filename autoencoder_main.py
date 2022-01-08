@@ -11,6 +11,8 @@ from pathlib import Path
 import timeit
 import json
 import datetime
+import sys
+import signal
 # import colour
 
 from torch.utils import data
@@ -73,7 +75,7 @@ def atEachImage(canvasArray,imageName):
 
 def loadModel(modelpath, preprDict, color, official=False):
     print('Loading model...')
-    model = utils.loadModel(modelpath)
+    model, *_ = utils.loadModel(modelpath)
     model.to(device)
 
     if official:
@@ -161,7 +163,7 @@ def applyPreprocessingFuncs(patchesList, preprDict, color):
         print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False):
+def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True):
     print('Loading training images...')
     patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color)
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
@@ -177,58 +179,65 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False):
     else:
         meanValLoss = 0.0
     model, criterion, optimizer = utils.createModelOptimizer()
+    existingModel = Path(modelpath)
     lossPerEpoch = {}
+    
+    # check if model already exists an if training should be continued
+    continueOutput = f'Continueing training if model {modelpath} already exists' if continueModel else f'Not continueing training if model {modelpath} already exists'
+    print(continueOutput)
+    lastEpoch = 0
+    if existingModel.is_file() and continueModel:
+        print(f'Loading existin model {modelpath}')
+        model, checkpoint, lastEpoch, lossPerEpoch = utils.loadModel(modelpath)
+        lastEpoch += 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     print('Training model...')
     start = timeit.default_timer()
-    for e in range(epochs):
-        trainOutputStr = ''
-        epochTrainLoss = 0.0
-        model.train()
-        for (item) in dataloader:
-            # testInd = 20
-            # print(np.moveaxis(item[testInd].numpy(), 0, 2).shape)
-            # print(item.numpy().shape)
-            # cv2.imshow('ImageWindow', np.moveaxis(item[testInd].numpy(), 0, 2))
-            # utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
-            # print('Done')
-            # cv2.waitKey()
-            item = item.to(device)
-            recon = model(item)
-            loss = criterion(recon, item)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            epochTrainLoss += loss.item()
-        meanTrainLoss = epochTrainLoss / len(dataloader)
-        trainOutputStr = f'Epoch: {e}, Train Loss: {(meanTrainLoss):.4f}'
-        # validation loop
-        valOutputStr = ''
-        if validate:
-            epochValidLoss = 0.0
-            model.eval()
-            with torch.no_grad():
-                for (valItem) in valdataloader:
-                    valItem = valItem.to(device)
-                    recon = model (valItem)
-                    loss = criterion (recon, valItem)
-                    epochValidLoss += loss.item()
-            meanValLoss = epochValidLoss / len(valdataloader)
-            valOutputStr = f' Validation Loss: {(meanValLoss):.4f}'
-        print(trainOutputStr+valOutputStr)
-        lossPerEpoch[e] = {'train_loss': meanTrainLoss, 'valid_loss': meanValLoss}
+    try:
+        for e in range(lastEpoch, epochs+lastEpoch):
+            trainOutputStr = ''
+            epochTrainLoss = 0.0
+            model.train()
+            for (item) in dataloader:
+                item = item.to(device)
+                recon = model(item)
+                loss = criterion(recon, item)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                epochTrainLoss += loss.item()
+            meanTrainLoss = epochTrainLoss / len(dataloader)
+            trainOutputStr = f'Epoch: {e}, Train Loss: {(meanTrainLoss):.4f}'
+            # validation loop
+            valOutputStr = ''
+            if validate:
+                epochValidLoss = 0.0
+                model.eval()
+                with torch.no_grad():
+                    for (valItem) in valdataloader:
+                        valItem = valItem.to(device)
+                        recon = model (valItem)
+                        loss = criterion (recon, valItem)
+                        epochValidLoss += loss.item()
+                meanValLoss = epochValidLoss / len(valdataloader)
+                valOutputStr = f' Validation Loss: {(meanValLoss):.4f}'
+            print(trainOutputStr+valOutputStr)
+            lossPerEpoch[e] = {'train_loss': meanTrainLoss, 'valid_loss': meanValLoss}
+    except KeyboardInterrupt:
+        print(e)
+        trainTime = (timeit.default_timer()-start)/60
+        utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize)
+        sys.exit(0)
     trainTime = (timeit.default_timer()-start)/60
-    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-    metricFileName = f'models/metrics_{ modelpath.split("/")[-1].replace(".txt", "") }.json'
-    utils.saveTrainMetrics(metricFileName, lossPerEpoch)
-    print(f'{trainTime = }min')
-    torch.save(model.state_dict(), modelpath)
+    utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize)
     loadModel(modelpath, preprDict, color)
     return model, lossPerEpoch
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train autoencoder')
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
-    parser.add_argument('--model', default='models/testmodel.txt', type=str, help='Path to the model file')
+    parser.add_argument('--model', default='models/testmodel.pt', type=str, help='Path to the model file')
     parser.add_argument('--color', default='RGB', type=str, help='The color space used for training (RGB, HSV, LAB)')
     parser.add_argument('--batchSize', default=-1, type=int, help='Batch size during training and validation. Set to -1 to take the complete trainingset size')
     parser.add_argument('--validate', default=False, action='store_true', help='Whether validation should be done during training')
@@ -236,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--blur', dest='blur', default=False, action='store_true', help='Apply blur during preprocessing')
     parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
     parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
+    parser.add_argument('--continue', dest='continue', default=False, action='store_true', help='Continue training if model already exists')
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:

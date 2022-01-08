@@ -5,7 +5,8 @@ import os
 import json
 import pathlib
 from sklearn.cluster import MiniBatchKMeans
-
+import datetime
+import warnings
 from torch._C import device
 
 import utils.autoencoder_boilerplate as ae
@@ -159,11 +160,19 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
                 currentTileIndex=0
 
 def loadModel(name='models/testmodel.txt'):
-
     global device
     model = ae.Autoencoder()
-    model.load_state_dict(torch.load(name, map_location=device))
-    return model
+    checkpoint = torch.load(name, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.to(device)
+    lastEpoch = checkpoint['epoch']
+    lossPerEpoch = checkpoint['metricDict']
+    return model, checkpoint, lastEpoch, lossPerEpoch
+
+def loadMetrics(metricFileName):
+    with open(metricFileName) as json_file:
+        metricDict = json.load(json_file)
+    return metricDict
 
 def saveTrainMetrics(fileName, metricDict):
     with open(fileName, 'w') as fp:
@@ -175,6 +184,27 @@ def createModelOptimizer():
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
     return model, criterion, optimizer
+
+# stores the results and metrics after training
+def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoch, optimizer, batchSize):
+    print(f'Saving model...')
+    if 'miscInfo' in lossPerEpoch:
+        trainTime = trainTime + lossPerEpoch['miscInfo']['trainTime']
+        for prep, val in preprDict.items():
+            if lossPerEpoch['miscInfo']['preprocessing'][prep] is not val:
+                oldVal = lossPerEpoch['miscInfo']['preprocessing'][prep]
+                warnings.warn(f'Mismatch with existin preprocessing metrics. {prep} was {oldVal} but now is {val}')
+    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'batchsize': batchSize}
+    metricFileName = f'models/metrics_{ modelpath.split("/")[-1].replace(".txt", "") }.json'
+    saveTrainMetrics(metricFileName, lossPerEpoch)
+    print(f'{trainTime = }min')
+    torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'metricDict': lossPerEpoch
+            }, modelpath)
+    print(f'Done saving model to: {modelpath} and metrics to: {metricFileName}')
 
 # applies blur to a single patch
 def blurMapWrapper(patch):
