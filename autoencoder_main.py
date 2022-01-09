@@ -187,10 +187,9 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
     print(continueOutput)
     lastEpoch = 0
     if existingModel.is_file() and continueModel:
-        print(f'Loading existin model {modelpath}')
-        model, checkpoint, lastEpoch, lossPerEpoch = utils.loadModel(modelpath)
+        print(f'Loading existing model {modelpath}')
+        model, checkpoint, lastEpoch, lossPerEpoch, optimizer = utils.loadModel(modelpath, optimizer=optimizer)
         lastEpoch += 1
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     signal.signal(signal.SIGINT, signal.default_int_handler)
     print('Training model...')
     start = timeit.default_timer()
@@ -227,10 +226,10 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
     except KeyboardInterrupt:
         print(e)
         trainTime = (timeit.default_timer()-start)/60
-        utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize)
+        utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color)
         sys.exit(0)
     trainTime = (timeit.default_timer()-start)/60
-    utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize)
+    utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color)
     loadModel(modelpath, preprDict, color)
     return model, lossPerEpoch
 
@@ -245,10 +244,10 @@ if __name__ == '__main__':
     parser.add_argument('--blur', dest='blur', default=False, action='store_true', help='Apply blur during preprocessing')
     parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
     parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
-    parser.add_argument('--continue', dest='continue', default=False, action='store_true', help='Continue training if model already exists')
+    parser.add_argument('--continueModel', dest='continueModel', default=False, action='store_true', help='Continue training if model already exists')
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate)
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel)
     else:
         loadModel(args.model, preprDict, args.color, official=args.official)

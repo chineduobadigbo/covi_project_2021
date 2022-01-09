@@ -99,10 +99,10 @@ def sliceImage(imagepath, color):
             xCoord = x*patchSize[0]
             yCoord = y*patchSize[1]
             patch = image[xCoord:xCoord+patchSize[0],yCoord:yCoord+patchSize[1],:]
-            patch = cv2.cvtColor(patch, ColorMappingGDict[color]['mapping'])
 
             if cv2.countNonZero(patch[::,0]) > 0: #discard all completely black patches
                 tileCount += 1
+                patch = cv2.cvtColor(patch, ColorMappingGDict[color]['mapping'])
                 patches.append(patch)
                 mapping.append((xCoord,yCoord))
 
@@ -159,14 +159,22 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
                 currentImageIndex+=1
                 currentTileIndex=0
 
-def loadModel(name='models/testmodel.txt'):
+def loadModel(name='models/testmodel.txt', optimizer=None):
     global device
     model = ae.Autoencoder()
     checkpoint = torch.load(name, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    except KeyError:
+        print(f'Trying to load legacy model {name}. Loading model without checkpoint, lastEpoch, lossPerEpoch and optimizer')
+        model.load_state_dict(checkpoint)
+        return model, None
     model.to(device)
     lastEpoch = checkpoint['epoch']
     lossPerEpoch = checkpoint['metricDict']
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        return model, checkpoint, lastEpoch, lossPerEpoch, optimizer
     return model, checkpoint, lastEpoch, lossPerEpoch
 
 def loadMetrics(metricFileName):
@@ -186,15 +194,21 @@ def createModelOptimizer():
     return model, criterion, optimizer
 
 # stores the results and metrics after training
-def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoch, optimizer, batchSize):
+def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoch, optimizer, batchSize, color):
     print(f'Saving model...')
     if 'miscInfo' in lossPerEpoch:
         trainTime = trainTime + lossPerEpoch['miscInfo']['trainTime']
         for prep, val in preprDict.items():
             if lossPerEpoch['miscInfo']['preprocessing'][prep] is not val:
                 oldVal = lossPerEpoch['miscInfo']['preprocessing'][prep]
-                warnings.warn(f'Mismatch with existin preprocessing metrics. {prep} was {oldVal} but now is {val}')
-    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'batchsize': batchSize}
+                warnings.warn(f'Mismatch with existing preprocessing metrics. {prep} was {oldVal} but now is {val}', stacklevel=2)
+            if lossPerEpoch['miscInfo']['batchSize'] is not batchSize:
+                oldBatchSize = lossPerEpoch['miscInfo']['batchSize']
+                warnings.warn(f'Mismatch with existing batchSize metric. batchSize was {oldBatchSize} but now is {batchSize}. Old batchSize will be overwritten', stacklevel=2)
+            if lossPerEpoch['miscInfo']['color'] is not color:
+                oldColor = lossPerEpoch['miscInfo']['color']
+                warnings.warn(f'Mismatch with existing color metric. color was {oldColor} but now is {color}. Old color will be overwritten', stacklevel=2)
+    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'batchSize': batchSize, 'color': color}
     metricFileName = f'models/metrics_{ modelpath.split("/")[-1].replace(".txt", "") }.json'
     saveTrainMetrics(metricFileName, lossPerEpoch)
     print(f'{trainTime = }min')
@@ -233,8 +247,7 @@ def quantizeMapWrapper(patch, color):
     return quant
 
 def quantizePatches(patchList, color):
-    vFuncQuant = np.vectorize(quantizeMapWrapper, signature='(m,n,c)->(m,n,c)')
-    quantizedPatchList = vFuncQuant(np.array(patchList), color)
+    quantizedPatchList = np.array([quantizeMapWrapper(x, color) for x in patchList])
     return quantizedPatchList
     
 
