@@ -63,8 +63,9 @@ def loadValidationImages(color, timepoints = [3]):
     return returnDict
 
 
-def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None): #so far, this only loads the images of one camera in the training set
+def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None, completeData=False): #so far, this only loads the images of one camera in the training set
     print(f'Loading images into {color} space...')
+    fileName = fileName.split('/')[-1]
     patches_list = []
     mapping_list = []
     resolution_list = []
@@ -72,15 +73,22 @@ def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None): 
     tileCount_list = []
     for root, dirs, files in os.walk(baseDir, topdown=False):
         for name in dirs:
-            sub_folder_image_name = name +fileName
-            img_path = baseDir + sub_folder_image_name
-            slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
-            patches,mapping,resolution, tileCount = sliceImage(slice_img_path, color)
-            patches_list.append(patches)
-            mapping_list.append(mapping)
-            resolution_list.append(resolution)
-            image_name_list.append(sub_folder_image_name)
-            tileCount_list.append(tileCount)
+            for file in os.listdir(os.path.abspath(os.path.join(root, name))):
+                takeFile = False
+                if completeData and file.endswith(".png"):
+                    takeFile = True
+                elif not completeData and fileName in file:
+                    takeFile = True
+                if takeFile:
+                    sub_folder_image_name = f'{name}/{file}'
+                    img_path = baseDir + sub_folder_image_name
+                    slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
+                    patches,mapping,resolution, tileCount = sliceImage(slice_img_path, color)
+                    patches_list.append(patches)
+                    mapping_list.append(mapping)
+                    resolution_list.append(resolution)
+                    image_name_list.append(sub_folder_image_name)
+                    tileCount_list.append(tileCount)
     if type(size) == int:
         return patches_list[0:size], mapping_list[0:size], resolution_list[0:size], image_name_list[0:size], tileCount_list[0:size]
     else:

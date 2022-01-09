@@ -48,11 +48,9 @@ def atEachPatch(patchTensor,reconstructedPatchTensor, color):
     originalHist = cv2.normalize(originalHist, originalHist).flatten()
     reconstructedHist = cv2.calcHist([reconstructedPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     reconstructedHist = cv2.normalize(reconstructedHist, reconstructedHist).flatten()
-
-
     #mse = np.mean(colour.delta_E(cv2.cvtColor(originalPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB), cv2.cvtColor(reconstructedPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB)))**2
     # histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR))+1)**2
-    histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*100
+    histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*50
     
     # mse = np.square(np.mean(diffPatchLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
     #print(mse)
@@ -163,10 +161,11 @@ def applyPreprocessingFuncs(patchesList, preprDict, color):
         print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True):
+def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True, completeData=True):
     print('Loading training images...')
-    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color)
+    patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color, completeData=completeData)
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
+    print(f'Using {len(flattenedpatchesList)} training patches for training')
     batchSize = len(flattenedpatchesList) if batchSize == -1 else batchSize
     prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict, color)
     print(f'{batchSize = }')
@@ -245,9 +244,10 @@ if __name__ == '__main__':
     parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
     parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
     parser.add_argument('--continueModel', dest='continueModel', default=False, action='store_true', help='Continue training if model already exists')
+    parser.add_argument('--completeData', dest='completeData', default=True, action='store_true', help='Use the complete trainingdata')
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel)
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel, completeData=args.completeData)
     else:
         loadModel(args.model, preprDict, args.color, official=args.official)
