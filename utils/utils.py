@@ -8,6 +8,7 @@ from sklearn.cluster import MiniBatchKMeans
 import datetime
 import warnings
 from torch._C import device
+from utils.pytorch_msssim import MS_SSIM_Loss, SSIM_Loss
 
 import utils.autoencoder_boilerplate as ae
 
@@ -194,15 +195,23 @@ def saveTrainMetrics(fileName, metricDict):
     with open(fileName, 'w') as fp:
         json.dump(metricDict, fp)
 
-def createModelOptimizer():
+def createModelOptimizer(loss='mse'):
     model = ae.Autoencoder()
     model.to(device)
-    criterion = torch.nn.MSELoss()
+    if loss == 'mse':
+        criterion = torch.nn.MSELoss()
+        print(f'Using mse loss')
+    elif loss == 'ssim':
+        criterion = SSIM_Loss(data_range=1.0, size_average=True, channel=3)
+        print(f'Using ssim loss')
+    else:
+        criterion = MS_SSIM_Loss(data_range=1.0, size_average=True, channel=3)
+        print(f'Using mse ms_ssim')
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
     return model, criterion, optimizer
 
 # stores the results and metrics after training
-def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoch, optimizer, batchSize, color):
+def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoch, optimizer, batchSize, color, lossFunc):
     print(f'Saving model...')
     if 'miscInfo' in lossPerEpoch:
         trainTime = trainTime + lossPerEpoch['miscInfo']['trainTime']
@@ -216,7 +225,14 @@ def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoc
             if lossPerEpoch['miscInfo']['color'] is not color:
                 oldColor = lossPerEpoch['miscInfo']['color']
                 warnings.warn(f'Mismatch with existing color metric. color was {oldColor} but now is {color}. Old color will be overwritten', stacklevel=2)
-    lossPerEpoch['miscInfo'] = {'trainTime': trainTime, 'preprocessing': preprDict, 'modelName': modelpath.split('/')[-1], 'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'batchSize': batchSize, 'color': color}
+    lossPerEpoch['miscInfo'] = {
+        'trainTime': trainTime, 
+        'preprocessing': preprDict, 
+        'modelName': modelpath.split('/')[-1], 
+        'trainDate': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
+        'batchSize': batchSize, 
+        'color': color, 
+        'lossFunc': lossFunc}
     metricFileName = f'models/metrics_{ modelpath.split("/")[-1].replace(".txt", "") }.json'
     saveTrainMetrics(metricFileName, lossPerEpoch)
     print(f'{trainTime = }min')

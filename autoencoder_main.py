@@ -161,7 +161,7 @@ def applyPreprocessingFuncs(patchesList, preprDict, color):
         print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True, completeData=True):
+def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True, completeData=True, lossFunc='mse'):
     print('Loading training images...')
     patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color, completeData=completeData)
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
@@ -177,7 +177,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
         valdataloader = utils.dataLoadWrapper(valPrepPatches, batchSize)
     else:
         meanValLoss = 0.0
-    model, criterion, optimizer = utils.createModelOptimizer()
+    model, criterion, optimizer = utils.createModelOptimizer(loss=lossFunc)
     existingModel = Path(modelpath)
     lossPerEpoch = {}
     
@@ -225,10 +225,10 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
     except KeyboardInterrupt:
         print(e)
         trainTime = (timeit.default_timer()-start)/60
-        utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color)
+        utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color, lossFunc)
         sys.exit(0)
     trainTime = (timeit.default_timer()-start)/60
-    utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color)
+    utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color, lossFunc)
     loadModel(modelpath, preprDict, color)
     return model, lossPerEpoch
 
@@ -237,6 +237,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
     parser.add_argument('--model', default='models/testmodel.pt', type=str, help='Path to the model file')
     parser.add_argument('--color', default='RGB', type=str, help='The color space used for training (RGB, HSV, LAB)')
+    parser.add_argument('--lossFunc', default='ssim', type=str, help='The loss used for training')
     parser.add_argument('--batchSize', default=-1, type=int, help='Batch size during training and validation. Set to -1 to take the complete trainingset size')
     parser.add_argument('--validate', default=False, action='store_true', help='Whether validation should be done during training')
     parser.add_argument('--train', dest='train', default=False, action='store_true', help='Dont load the model, train it instead')
@@ -244,10 +245,10 @@ if __name__ == '__main__':
     parser.add_argument('--quantize', dest='quantize', default=False, action='store_true', help='Apply quantization during preprocessing')
     parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
     parser.add_argument('--continueModel', dest='continueModel', default=False, action='store_true', help='Continue training if model already exists')
-    parser.add_argument('--completeData', dest='completeData', default=True, action='store_true', help='Use the complete trainingdata')
+    parser.add_argument('--completeData', dest='completeData', default=False, action='store_true', help='Use the complete trainingdata')
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel, completeData=args.completeData)
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel, completeData=args.completeData, lossFunc=args.lossFunc)
     else:
         loadModel(args.model, preprDict, args.color, official=args.official)
