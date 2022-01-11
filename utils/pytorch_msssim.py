@@ -92,6 +92,8 @@ def _ssim(X, Y, data_range, win, size_average=True, K=(0.01, 0.03)):
     ssim_map = ((2 * mu1_mu2 + C1) / (mu1_sq + mu2_sq + C1)) * cs_map
 
     ssim_per_channel = torch.flatten(ssim_map, 2).mean(-1)
+    # print(f'{ssim_per_channel.shape = }')
+    # print(f'{ssim_per_channel = }')
     cs = torch.flatten(cs_map, 2).mean(-1)
     return ssim_per_channel, cs
 
@@ -150,8 +152,10 @@ def ssim(
         ssim_per_channel = torch.relu(ssim_per_channel)
 
     if size_average:
+        # print(f'{ssim_per_channel.mean() = }')
         return ssim_per_channel.mean()
     else:
+        # print(f'{ssim_per_channel.mean(1) = }')
         return ssim_per_channel.mean(1)
 
 

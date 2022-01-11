@@ -202,7 +202,7 @@ def createModelOptimizer(loss='mse'):
         criterion = torch.nn.MSELoss()
         print(f'Using mse loss')
     elif loss == 'ssim':
-        criterion = SSIM_Loss(data_range=1.0, size_average=True, channel=3)
+        criterion = SSIM_Loss(data_range=1.0, win_size=5,  size_average=True, channel=3)
         print(f'Using ssim loss')
     else:
         criterion = MS_SSIM_Loss(data_range=1.0, size_average=True, channel=3)
