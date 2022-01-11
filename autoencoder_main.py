@@ -14,7 +14,7 @@ import datetime
 import sys
 import signal
 # import colour
-
+from skimage.metrics import structural_similarity as compare_ssim
 from torch.utils import data
 
 #our own modules
@@ -57,6 +57,21 @@ def atEachPatch(patchTensor,reconstructedPatchTensor, color):
     # mse = np.mean(np.square(diffPatchHSV[:,:,0]))
     # print(f'{location}, hist_diff: {histDiff}')
     mse = histDiff
+
+
+    #****david's version:****
+    # originalPatch = utils.convertTensorToImage(patchTensor)
+    # reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor)
+    # hsvOriginal = cv2.cvtColor(originalPatch, cv2.COLOR_RGB2HSV)
+    # hsvRecreated = cv2.cvtColor(reconstructedPatch, cv2.COLOR_RGB2HSV)
+    # hsvOriginalBlurred = cv2.blur(hsvOriginal[:,:,1],(10,10))
+    # hsvRecreatedBlurred = cv2.blur(hsvRecreated[:,:,1],(10,10))
+    # (mse, diff) = compare_ssim(hsvOriginalBlurred, hsvRecreatedBlurred, full=True)
+    # mse = (1-mse) * 255
+    # diff = (diff * 255).astype("uint8")
+    # diffPatch = cv2.cvtColor(diff,cv2.COLOR_GRAY2RGB)
+    #************************
+
     msePatch = np.ones(originalPatch.shape)*(mse,mse,mse)
     return [originalPatch, reconstructedPatch, diffPatch,msePatch]
 
@@ -84,29 +99,20 @@ def loadModel(modelpath, preprDict, color, official=False):
         middleImage = None
         def customAtEachImage(canvasArray,imageName):
             print(f'{imageName = }')
-            originalImage = canvasArray[0]
-            recreatedImage = canvasArray[1]
             mseImage = canvasArray[3]
-            diffImage = canvasArray[2]
-            #originalLAB = cv2.cvtColor(originalImage, cv2.COLOR_RGB2HSV)
-            #completeMSE = np.square(np.mean(originalLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
-            #mseImage -= int(completeMSE)
-            reducedMSE = bb.reduceDimensionality(mseImage)
-            reducedMSE *= reducedMSE
-            reducedMSE *= reducedMSE
-            #cv2.imshow('mse', bb.increaseDimensionality(reducedMSE))
-            boundingbox = bb.getBoundingBox(bbmodel, reducedMSE)
-            #print(boundingbox)
+            originalImage = canvasArray[0]
 
-            boundingBoxes[imageName] = boundingbox
+            reducedMSE = bb.reduceDimensionality(mseImage)
+            reducedMSE[3,:] = 0
+            reducedMSE[12,:] = 0
+            predictedBB = bb.getBoundingBox(bbmodel, reducedMSE)
+            cv2.imshow('mse', mseImage)
+            bb.showImageWithBoundingBox(originalImage, predictedBB)
+
+            boundingBoxes[imageName] = predictedBB
             if imageName.endswith("B01.png"):
                 global middleImage
                 middleImage = originalImage
-            
-            cv2.imshow('image', originalImage)
-            cv2.imshow('mse', diffImage)
-            #bb.showImageWithBoundingBox(originalImage, boundingbox)
-            cv2.waitKey(0)
 
         folderDict = utils.loadValidationImages(color)
         validationDict = {}
