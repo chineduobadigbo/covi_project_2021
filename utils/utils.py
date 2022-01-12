@@ -31,7 +31,7 @@ def dataLoadWrapper(patches, batchSize=1024): #dataloader length is number of im
     return torch.utils.data.DataLoader(ae.PatchDataset(patches), batch_size=batchSize, shuffle=False,num_workers=0, pin_memory=True)
 
 
-def loadValidationImages(color, timepoints = [3]):
+def loadValidationImages(color, timepoints = [3], combined = False):
     validationDir = "data/validation/"
 
     returnDict = {}
@@ -45,27 +45,41 @@ def loadValidationImages(color, timepoints = [3]):
 
 
 
-            for _, _, files in os.walk(os.path.join(pathlib.Path().resolve(), validationDir+folder), topdown=False):
-                for file in files:
-                    if(file.endswith(".png")):
-                        timepoint = int(file[0])
+            if combined:
+                for timepoint in timepoints:
+                    path = os.path.join(pathlib.Path().resolve(), validationDir+folder)
+                    image = loadCombined(path,timepoint)
+                    patches,mapping,resolution,tileCount = sliceImage("", color, image)
+                    folderDict[timepoint][0].append(patches)
+                    folderDict[timepoint][1].append(mapping)
+                    folderDict[timepoint][2].append(resolution)
+                    folderDict[timepoint][3].append(folder+"/"+str(timepoint)+"-B01.png")
+                    folderDict[timepoint][4].append(tileCount)
 
-                        if(timepoint in timepoints):
-                            imagePath = os.path.join(pathlib.Path().resolve(), validationDir+folder+"/"+file)
-                            patches,mapping,resolution,tileCount = sliceImage(imagePath, color)
-                            folderDict[timepoint][0].append(patches)
-                            folderDict[timepoint][1].append(mapping)
-                            folderDict[timepoint][2].append(resolution)
-                            folderDict[timepoint][3].append(folder+"/"+file)
-                            folderDict[timepoint][4].append(tileCount)
+            else:
+                for _, _, files in os.walk(os.path.join(pathlib.Path().resolve(), validationDir+folder), topdown=False):
+                    for file in files:
+                        if(file.endswith(".png")):
+                            timepoint = int(file[0])
+
+                            if(timepoint in timepoints):
+                                imagePath = os.path.join(pathlib.Path().resolve(), validationDir+folder+"/"+file)
+                                patches,mapping,resolution,tileCount = sliceImage(imagePath, color)
+                                folderDict[timepoint][0].append(patches)
+                                folderDict[timepoint][1].append(mapping)
+                                folderDict[timepoint][2].append(resolution)
+                                folderDict[timepoint][3].append(folder+"/"+file)
+                                folderDict[timepoint][4].append(tileCount)
 
             returnDict[folder] = folderDict
 
     return returnDict
 
 
-def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None, completeData=False): #so far, this only loads the images of one camera in the training set
+def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None, completeData=False, combined = False): #so far, this only loads the images of one camera in the training set
     print(f'Loading images into {color} space...')
+    if combined:
+        completeData = True
     fileName = fileName.split('/')[-1]
     patches_list = []
     mapping_list = []
@@ -74,29 +88,67 @@ def loadImages(color, fileName='/0-B01.png', baseDir='data/train/', size=None, c
     tileCount_list = []
     for root, dirs, files in os.walk(baseDir, topdown=False):
         for name in dirs:
-            for file in os.listdir(os.path.abspath(os.path.join(root, name))):
-                takeFile = False
-                if completeData and file.endswith(".png"):
-                    takeFile = True
-                elif not completeData and fileName in file:
-                    takeFile = True
-                if takeFile:
-                    sub_folder_image_name = f'{name}/{file}'
-                    img_path = baseDir + sub_folder_image_name
-                    slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
-                    patches,mapping,resolution, tileCount = sliceImage(slice_img_path, color)
+
+            if combined:
+                for timepoint in range(0,6):
+                    path = os.path.join(pathlib.Path().resolve(), baseDir+name)
+                    image = loadCombined(path,timepoint)
+                    patches,mapping,resolution,tileCount = sliceImage("", color, image)
                     patches_list.append(patches)
                     mapping_list.append(mapping)
                     resolution_list.append(resolution)
-                    image_name_list.append(sub_folder_image_name)
+                    image_name_list.append(name+"/"+str(timepoint)+"-B01.png")
                     tileCount_list.append(tileCount)
+
+
+            else:
+                for file in os.listdir(os.path.abspath(os.path.join(root, name))):
+                    if file.startswith("._"): #weird windows hack
+                        file = file[2:]
+                    takeFile = False
+                    if completeData and file.endswith(".png"):
+                        takeFile = True
+                    elif not completeData and fileName in file:
+                        takeFile = True
+                    if takeFile:
+                        sub_folder_image_name = f'{name}/{file}'
+                        img_path = baseDir + sub_folder_image_name
+                        slice_img_path = os.path.join(pathlib.Path().resolve(), img_path)
+                        patches,mapping,resolution, tileCount = sliceImage(slice_img_path, color)
+                        patches_list.append(patches)
+                        mapping_list.append(mapping)
+                        resolution_list.append(resolution)
+                        image_name_list.append(sub_folder_image_name)
+                        tileCount_list.append(tileCount)
+
     if type(size) == int:
         return patches_list[0:size], mapping_list[0:size], resolution_list[0:size], image_name_list[0:size], tileCount_list[0:size]
     else:
         return patches_list, mapping_list, resolution_list, image_name_list, tileCount_list
 
-def sliceImage(imagepath, color):
-    image = cv2.imread(imagepath)
+    
+def loadCombined(path,timepoint):
+    with open(path+"/homographies.json",) as f:   
+        homographies = json.load(f)
+
+    image = cv2.imread(path+"/"+str(timepoint)+"-B01.png")
+    resultImg = np.zeros(image.shape)
+
+    for root, dirs, files in os.walk(path, topdown=False):
+        for name in files:
+            if ".json" not in name and name[0] == str(timepoint):
+                image = cv2.imread(path+"/"+name)
+                #print('Image Name: {}'.format(path+"/"+name))
+                homography = np.array(homographies[name.replace(".png","")])
+                warped_image = cv2.warpPerspective(image,homography,image.shape[:2])
+                resultImg = cv2.addWeighted(warped_image, 0.1, resultImg, 1, 0.0, dtype=cv2.CV_32F).astype(np.uint8)
+                
+    return resultImg
+
+def sliceImage(imagepath, color, image=None):
+    if image is None:
+        image = cv2.imread(imagepath)
+
     patchSize = (64,64)
     imgResolution = image.shape[:-1]
     patchCount = (int(imgResolution[0]/patchSize[0]),int(imgResolution[1]/patchSize[1]))

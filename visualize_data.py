@@ -56,11 +56,11 @@ def showImageWithAnnotations(foldername,withCombined):
     print('Labels: {}'.format(gtlabels))
     for bb in gtlabels:
         x,y,w,h = bb
-        cv2.rectangle(image,(x, y),(x+w, y+h),(0,0,255),5) 
+        cv2.rectangle(image,(x, y),(x+w, y+h),(0,0,255),1)
 
 
     if SHOW_IMAGES:
-        cv2.imshow(foldername,image)
+        cv2.imshow("merged",image)
         cv2.waitKey(0)
     write_dir = SAVE_PATH+foldername
     cv2.imwrite(write_dir+'/merged.png', image)
