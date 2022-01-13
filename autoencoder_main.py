@@ -1,7 +1,9 @@
+import os
+os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
+
 import torch
 import numpy as np
 import cv2
-import os
 import argparse
 import time
 import datetime
@@ -241,6 +243,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
             print(trainOutputStr+valOutputStr)
             lossPerEpoch[e] = {'train_loss': meanTrainLoss, 'valid_loss': meanValLoss}
     except KeyboardInterrupt:
+        print('Training interrupted!')
         print(e)
         trainTime = (timeit.default_timer()-start)/60
         utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color, lossFunc)
