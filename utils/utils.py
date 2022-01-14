@@ -234,6 +234,7 @@ def loadModel(name='models/testmodel.txt', optimizer=None):
     lastEpoch = checkpoint['epoch']
     lossPerEpoch = checkpoint['metricDict']
     if optimizer is not None:
+        optimizer = torch.optim.Adam(model.parameters())
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         return model, checkpoint, lastEpoch, lossPerEpoch, optimizer
     return model, checkpoint, lastEpoch, lossPerEpoch
@@ -268,13 +269,13 @@ def storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, epoc
     if 'miscInfo' in lossPerEpoch:
         trainTime = trainTime + lossPerEpoch['miscInfo']['trainTime']
         for prep, val in preprDict.items():
-            if lossPerEpoch['miscInfo']['preprocessing'][prep] is not val:
+            if lossPerEpoch['miscInfo']['preprocessing'][prep] != val:
                 oldVal = lossPerEpoch['miscInfo']['preprocessing'][prep]
                 warnings.warn(f'Mismatch with existing preprocessing metrics. {prep} was {oldVal} but now is {val}', stacklevel=2)
-            if lossPerEpoch['miscInfo']['batchSize'] is not batchSize:
+            if lossPerEpoch['miscInfo']['batchSize'] != batchSize:
                 oldBatchSize = lossPerEpoch['miscInfo']['batchSize']
                 warnings.warn(f'Mismatch with existing batchSize metric. batchSize was {oldBatchSize} but now is {batchSize}. Old batchSize will be overwritten', stacklevel=2)
-            if lossPerEpoch['miscInfo']['color'] is not color:
+            if lossPerEpoch['miscInfo']['color'] != color:
                 oldColor = lossPerEpoch['miscInfo']['color']
                 warnings.warn(f'Mismatch with existing color metric. color was {oldColor} but now is {color}. Old color will be overwritten', stacklevel=2)
     lossPerEpoch['miscInfo'] = {
