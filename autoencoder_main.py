@@ -17,6 +17,7 @@ import sys
 import signal
 # import colour
 from skimage.metrics import structural_similarity as compare_ssim
+from utils.pytorch_msssim import SSIM
 from torch.utils import data
 
 #our own modules
@@ -39,27 +40,31 @@ def atEachBatch(model, batch):
 #receives the original and reconstructed patch tensors,
 #and returns a list of nparray patches which has to be the same length that you specify when calling puzzleBackTogether
 #this allows you to do different computations per patch that then get merged into one final image
-def atEachPatch(patchTensor,reconstructedPatchTensor, color):
-    originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor, color), color)
-    reconstructedPatch = utils.blurMapWrapper(utils.convertTensorToImage(reconstructedPatchTensor, color))
-    diffPatch = np.subtract(originalPatch,reconstructedPatch)
-    originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_BGR2LAB)
-    reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_BGR2LAB)
-    # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
-    originalHist = cv2.calcHist([originalPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-    originalHist = cv2.normalize(originalHist, originalHist).flatten()
-    reconstructedHist = cv2.calcHist([reconstructedPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-    reconstructedHist = cv2.normalize(reconstructedHist, reconstructedHist).flatten()
-    #mse = np.mean(colour.delta_E(cv2.cvtColor(originalPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB), cv2.cvtColor(reconstructedPatchLAB.astype(np.float32) / 255, cv2.COLOR_RGB2LAB)))**2
-    # histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR))+1)**2
-    histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*50
-    
-    # mse = np.square(np.mean(diffPatchLAB[:,:,1]))#+np.square(np.mean(originalLAB[:,:,2]))
-    #print(mse)
-    # mse = np.mean(np.square(diffPatchHSV[:,:,0]))
-    # print(f'{location}, hist_diff: {histDiff}')
-    mse = histDiff
-
+def atEachPatch(patchTensor,reconstructedPatchTensor, color, outputErrType):
+    if outputErrType == 'custom':
+        originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor, color), color)
+        reconstructedPatch = utils.blurMapWrapper(utils.convertTensorToImage(reconstructedPatchTensor, color))
+        diffPatch = np.subtract(originalPatch,reconstructedPatch)
+        originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_BGR2LAB)
+        reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_BGR2LAB)
+        # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
+        originalHist = cv2.calcHist([originalPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        originalHist = cv2.normalize(originalHist, originalHist).flatten()
+        reconstructedHist = cv2.calcHist([reconstructedPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        reconstructedHist = cv2.normalize(reconstructedHist, reconstructedHist).flatten()
+        histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*50
+        mse = histDiff
+    else:
+        originalPatch = utils.convertTensorToImage(patchTensor, color)
+        reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor, color)
+        # add empty dim so that shape goes from [3, 64, 64] to [1, 3, 64, 64]
+        # since ssim expects "list" of images
+        patchTensor = patchTensor[None, :, :, :]
+        reconstructedPatchTensor = reconstructedPatchTensor[None, :, :, :]
+        diffPatch = np.subtract(originalPatch,reconstructedPatch)
+        # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
+        ssim = SSIM(data_range=1.0, win_size=5,  size_average=True, channel=3).forward(reconstructedPatchTensor, patchTensor)
+        mse = (1-ssim).item()*255
 
     #****david's version:****
     # originalPatch = utils.convertTensorToImage(patchTensor)
@@ -96,7 +101,7 @@ def atEachImage(canvasArray,imageName):
     for i, (canvas, imgType) in enumerate(zip(canvasArray, imageOrder)):
         cv2.imwrite(writeDir+'/'+f'{imgType}_{imgName}', canvas)
 
-def loadModel(modelpath, preprDict, color, official=False, combineImages = False):
+def loadModel(modelpath, preprDict, color, outputErrType, official=False, combineImages = False):
     print('Loading model...')
     model, *_ = utils.loadModel(modelpath)
     model.to(device)
@@ -138,7 +143,7 @@ def loadModel(modelpath, preprDict, color, official=False, combineImages = False
                 prepPatches = applyPreprocessingFuncs(utils.flattenListOfLists(patchesList), preprDict, color)
                 dataloader = utils.dataLoadWrapper(prepPatches)
                 #print(f'Number of patch batches: {len(dataloader)}')
-                utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
+                utils.puzzleBackTogether(atEachBatch,atEachPatch,customAtEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color, outputErrType)
                 combinedBoxes = bb.combineBoundingBoxes(datapoint,boundingBoxes,middleImage)
                 validationDict[datapoint] = combinedBoxes
                 boundingBoxes = {}
@@ -156,7 +161,7 @@ def loadModel(modelpath, preprDict, color, official=False, combineImages = False
 
         #I wrote this really weird wrapper to puzzle the patches back together to an image
         #it takes the above defined functions as arguments and merges the patches to the whole image again (for n images)
-        utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color)
+        utils.puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,4, model, color, outputErrType)
         return model 
 
 # loops over a list of provided functions 
@@ -181,7 +186,7 @@ def applyPreprocessingFuncs(patchesList, preprDict, color):
         print(f'{step} took {elapsed}s for {len(patchesList)} patches')
     return patchesList
 
-def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, continueModel=True, completeData=True, lossFunc='mse', combineImages = False):
+def trainModel(modelpath, epochs, batchSize, preprDict, color, outputErrType, validate=False, continueModel=True, completeData=True, lossFunc='mse', combineImages = False):
     print('Loading training images...')
     patchesList, mappingsList, resolutionsList, imageNamesList, tileCountsList = utils.loadImages(color, completeData=completeData, combined = combineImages)
     flattenedpatchesList = utils.flattenListOfLists(patchesList)
@@ -250,7 +255,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, validate=False, c
         sys.exit(0)
     trainTime = (timeit.default_timer()-start)/60
     utils.storeModelResults(modelpath, lossPerEpoch, trainTime, preprDict, model, e, optimizer, batchSize, color, lossFunc)
-    loadModel(modelpath, preprDict, color)
+    loadModel(modelpath, preprDict, color, outputErrType)
     return model, lossPerEpoch
 
 if __name__ == '__main__':
@@ -268,9 +273,10 @@ if __name__ == '__main__':
     parser.add_argument('--continueModel', dest='continueModel', default=False, action='store_true', help='Continue training if model already exists')
     parser.add_argument('--completeData', dest='completeData', default=False, action='store_true', help='Use the complete trainingdata')
     parser.add_argument('--combineImages', dest='combineImages', default=False, action='store_true', help='Combine images based on homograpies')
+    parser.add_argument('--outputErrType', default='ssim', type=str, help='The error func that gets used for creating the output patches (ssim, or custom)')    
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
-        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, validate=args.validate, continueModel=args.continueModel, completeData=args.completeData, lossFunc=args.lossFunc, combineImages = args.combineImages)
+        model, lossPerEpoch = trainModel(args.model, args.epochs, args.batchSize, preprDict, args.color, args.outputErrType, validate=args.validate, continueModel=args.continueModel, completeData=args.completeData, lossFunc=args.lossFunc, combineImages = args.combineImages)
     else:
-        loadModel(args.model, preprDict, args.color, official=args.official, combineImages=args.combineImages)
+        loadModel(args.model, preprDict, args.color, args.outputErrType, official=args.official, combineImages=args.combineImages)

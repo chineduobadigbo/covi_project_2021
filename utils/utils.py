@@ -187,8 +187,8 @@ def pickBestDevice():
     print(f'Using device: {device}')
     return device
 
-def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model, color):
-
+def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolutionsList,mappingsList,tileCountsList,imageNamesList,canvasCount, model, color, outputErrType):
+    print(f'Using {outputErrType} as error function in puzzleBackTogether')
     currentTileIndex=0 #index of the current tile within one image
     currentImageIndex=0
 
@@ -205,7 +205,7 @@ def puzzleBackTogether(atEachBatch,atEachPatch,atEachImage,dataloader,resolution
             patchTensor = item[i].cpu()
             reconstructedPatchTensor = reconstructedTensor[i].cpu()
             location = mappingsList[currentImageIndex][currentTileIndex]
-            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor, color)
+            patchArray = atEachPatch(patchTensor,reconstructedPatchTensor, color, outputErrType)
 
             for c in range(canvasCount):    
                 canvasArray[c][location[0]:location[0]+patchArray[c].shape[0],location[1]:location[1]+patchArray[c].shape[1],:] = patchArray[c]
