@@ -206,6 +206,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, outputErrType, va
     existingModel = Path(modelpath)
     lossPerEpoch = {}
     
+
     # check if model already exists an if training should be continued
     continueOutput = f'Continueing training if model {modelpath} already exists' if continueModel else f'Not continueing training if model {modelpath} already exists'
     print(continueOutput)
