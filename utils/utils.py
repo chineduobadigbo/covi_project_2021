@@ -59,6 +59,8 @@ def loadValidationImages(color, timepoints = [3], combined = False):
             else:
                 for _, _, files in os.walk(os.path.join(pathlib.Path().resolve(), validationDir+folder), topdown=False):
                     for file in files:
+                        if file.startswith("._"): #weird windows hack
+                            file = file[2:]
                         if(file.endswith(".png")):
                             timepoint = int(file[0])
 

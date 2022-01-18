@@ -124,8 +124,9 @@ def loadModel(modelpath, preprDict, color, outputErrType, official=False, combin
             predictedBB = bb.getBoundingBox(bbmodel, reducedMSE)
             cv2.imshow("recreated", recreatedImage)
             cv2.imshow("original", originalImage)
+            cv2.imshow('mse', mseImage)
             cv2.waitKey(0)
-            #cv2.imshow('mse', mseImage)
+            
             #bb.showImageWithBoundingBox(originalImage, predictedBB)
 
             boundingBoxes[imageName] = predictedBB
