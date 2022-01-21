@@ -261,7 +261,7 @@ def trainModel(modelpath, epochs, batchSize, preprDict, color, outputErrType, va
     return model, lossPerEpoch
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train autoencoder')
+    parser = argparse.ArgumentParser(description='Train autoencoder', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
     parser.add_argument('--model', default='models/testmodel_rgb.pt', type=str, help='Path to the model file')
     parser.add_argument('--color', default='RGB', type=str, help='The color space used for training (RGB, HSV, LAB)')
@@ -274,8 +274,8 @@ if __name__ == '__main__':
     parser.add_argument('--official', dest='official', default=False, action='store_true', help='Use the official validation dataset, compute bounding boxes and save them')
     parser.add_argument('--continueModel', dest='continueModel', default=False, action='store_true', help='Continue training if model already exists')
     parser.add_argument('--completeData', dest='completeData', default=False, action='store_true', help='Use the complete trainingdata')
-    parser.add_argument('--combineImages', dest='combineImages', default=False, action='store_true', help='Combine images based on homograpies')
-    parser.add_argument('--outputErrType', default='ssim', type=str, help='The error func that gets used for creating the output patches (ssim, or custom)')    
+    parser.add_argument('--combineImages', dest='combineImages', default=False, action='store_true', help='Combine images based on homographies')
+    parser.add_argument('--outputErrType', default='ssim', type=str, help='The error func that gets used for creating the output patches (ssim, mse or custom)')    
     args = parser.parse_args()
     preprDict = {'blur': args.blur, 'quantize': args.quantize}
     if args.train:
