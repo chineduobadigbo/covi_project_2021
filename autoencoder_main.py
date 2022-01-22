@@ -23,6 +23,7 @@ from torch.utils import data
 #our own modules
 import utils.utils as utils
 import utils.boundingbox as bb
+from utils.utils import blurMapWrapper, quantizeMapWrapper
 
 SAVE_PATH = 'data/train_images_mse/'
 SAVE_PATH = 'data/train_images_mse/'
@@ -41,30 +42,45 @@ def atEachBatch(model, batch):
 #and returns a list of nparray patches which has to be the same length that you specify when calling puzzleBackTogether
 #this allows you to do different computations per patch that then get merged into one final image
 def atEachPatch(patchTensor,reconstructedPatchTensor, color, outputErrType):
+    originalPatch = utils.convertTensorToImage(patchTensor, color)
+    reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor, color)
     if outputErrType == 'custom':
-        originalPatch = utils.quantizeMapWrapper(utils.convertTensorToImage(patchTensor, color), color)
-        reconstructedPatch = utils.blurMapWrapper(utils.convertTensorToImage(reconstructedPatchTensor, color))
         diffPatch = np.subtract(originalPatch,reconstructedPatch)
-        originalPatchLAB = cv2.cvtColor(originalPatch, cv2.COLOR_BGR2LAB)
-        reconstructedPatchLAB = cv2.cvtColor(reconstructedPatch, cv2.COLOR_BGR2LAB)
+        originalPatchLAB = cv2.cvtColor(quantizeMapWrapper(originalPatch, color), cv2.COLOR_BGR2LAB)
+        reconstructedPatchLAB = cv2.cvtColor(blurMapWrapper(reconstructedPatch), cv2.COLOR_BGR2LAB)
         # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
         originalHist = cv2.calcHist([originalPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
         originalHist = cv2.normalize(originalHist, originalHist).flatten()
         reconstructedHist = cv2.calcHist([reconstructedPatchLAB], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
         reconstructedHist = cv2.normalize(reconstructedHist, reconstructedHist).flatten()
-        histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))*50
-        mse = histDiff
-    else:
-        originalPatch = utils.convertTensorToImage(patchTensor, color)
-        reconstructedPatch = utils.convertTensorToImage(reconstructedPatchTensor, color)
+        histDiff = ((cv2.compareHist(originalHist, reconstructedHist, cv2.HISTCMP_CHISQR)))
+        mse = histDiff * 50 if histDiff >=1 else 0
+        
+        # print(f'{mse = }')
+    elif outputErrType == 'mse':
         # add empty dim so that shape goes from [3, 64, 64] to [1, 3, 64, 64]
         # since ssim expects "list" of images
+        diffPatch = np.subtract(originalPatch,reconstructedPatch)
+        mse = np.mean(np.square(diffPatch[:,:,0]))*2
+    else:
+        # add empty dim so that shape goes from [3, 64, 64] to [1, 3, 64, 64]
+        # since ssim expects "list" of images
+        originalPatchBlurred = blurMapWrapper(originalPatch)
+        reconstructedPatchBlurred = blurMapWrapper(reconstructedPatch)
+        patchTensor = torch.from_numpy(np.moveaxis(originalPatchBlurred/255, 2,0))
+        reconstructedPatchTensor = torch.from_numpy(np.moveaxis(reconstructedPatchBlurred/255, 2,0))
         patchTensor = patchTensor[None, :, :, :]
         reconstructedPatchTensor = reconstructedPatchTensor[None, :, :, :]
         diffPatch = np.subtract(originalPatch,reconstructedPatch)
         # 3D LAB color histogram with 8 bins per channel, yielding a 512-dim feature vector
         ssim = SSIM(data_range=1.0, win_size=5,  size_average=True, channel=3).forward(reconstructedPatchTensor, patchTensor)
         mse = (1-ssim).item()*255
+        
+        (skimage_mse, diff) = compare_ssim(originalPatchBlurred, reconstructedPatchBlurred, full=True, multichannel=True)
+        skimage_mse = (1-skimage_mse) * 255
+        # mse = skimage_mse
+        diff = (diff * 255).astype("uint8")
+        # diffPatch = cv2.cvtColor(diff,cv2.COLOR_GRAY2RGB)
 
     #****david's version:****
     # originalPatch = utils.convertTensorToImage(patchTensor)
